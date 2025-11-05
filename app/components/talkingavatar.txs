@@ -1,0 +1,121 @@
+'use client';
+import React, { useEffect, useMemo, useState } from 'react';
+
+type Gender = 'male' | 'female';
+
+export default function TalkingAvatar({
+  gender,
+  tone,
+  speaking,
+  viseme,
+  size = 220,
+}: {
+  gender: Gender;
+  tone: string;
+  speaking: boolean;   // true while TTS is speaking
+  viseme: number;      // 0..1 mouth openness (we drive this from TTS boundaries)
+  size?: number;
+}) {
+  const [blink, setBlink] = useState(0); // 0 open, 1 closed
+  const [head, setHead]   = useState(0); // -1..1 subtle bob
+
+  // random eye blinks
+  useEffect(() => {
+    let t: any;
+    const loop = () => {
+      t = setTimeout(() => {
+        setBlink(1);
+        setTimeout(() => setBlink(0), 120);
+        loop();
+      }, 2200 + Math.random() * 2500);
+    };
+    loop();
+    return () => clearTimeout(t);
+  }, []);
+
+  // gentle head motion while speaking
+  useEffect(() => {
+    let raf = 0;
+    const step = (now: number) => {
+      if (speaking) {
+        setHead(h => {
+          const target = Math.sin(now / 240) * (0.15 + 0.35 * viseme);
+          return h + (target - h) * 0.22;
+        });
+      } else {
+        setHead(h => h * 0.88);
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [speaking, viseme]);
+
+  const isFemale = gender === 'female';
+
+  // tone nudges (brows & smile)
+  const toneMod = useMemo(() => {
+    const t = tone.toLowerCase();
+    return {
+      smile:  t.includes('warm') || t.includes('friendly') || t.includes('flirty') ? 0.06 :
+              t.includes('matter-of-fact') ? 0.02 :
+              t.includes('firm') || t.includes('serious') ? 0.0 : 0.03,
+      brow:   t.includes('firm') ?  4 : t.includes('flirty') ? -2 : 0,
+    };
+  }, [tone]);
+
+  // mouth & eyes from viseme/blink
+  const mouthOpen = Math.max(0, Math.min(1, viseme));
+  const mouthH = 6 + mouthOpen * 16;
+  const mouthY = 128 - mouthH / 2 - toneMod.smile * 10;
+  const eyeH = blink ? 1.2 : 6.5;
+
+  return (
+    <svg viewBox="0 0 220 220" width={size} height={size} role="img" aria-label="Talking avatar">
+      <defs>
+        <radialGradient id="sk" cx="50%" cy="42%" r="60%">
+          <stop offset="0%" stopColor={isFemale ? '#ffe0c8' : '#ffd7b8'} />
+          <stop offset="100%" stopColor={isFemale ? '#f2bda0' : '#eab799'} />
+        </radialGradient>
+        <linearGradient id="shirt" x1="0" x2="1">
+          <stop offset="0%" stopColor={isFemale ? '#ff9fd1' : '#7aa8ff'} />
+          <stop offset="100%" stopColor={isFemale ? '#ff6fb8' : '#3d6cf0'} />
+        </linearGradient>
+        <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+          <feDropShadow dx="0" dy="8" stdDeviation="8" floodColor="rgba(0,0,0,.35)" />
+        </filter>
+      </defs>
+
+      <g filter="url(#shadow)" transform={`translate(${head*2}, ${head*2}) rotate(${head*2},110,110)`}>
+        {/* neck + head */}
+        <rect x="95" y="135" width="30" height="20" rx="8" fill="url(#sk)" />
+        <circle cx="110" cy="105" r="55" fill="url(#sk)" />
+        {/* hair */}
+        {isFemale ? (
+          <>
+            <path d="M55,95 q5,-48 55,-52 q50,4 55,52 v35 q-15,25 -55,28 q-40,-3 -55,-28 z" fill="#ffcc66"/>
+            <path d="M55,96 q22,-28 55,-30 q33,2 55,30 q-20,-15 -55,-16 q-35,1 -55,16 z" fill="#ffcf70"/>
+          </>
+        ) : (
+          <path d="M55,100 Q65,45 110,45 Q155,45 165,100 Q150,80 110,75 Q70,80 55,100 Z" fill="#3b3026" />
+        )}
+        {/* ears */}
+        <circle cx="55" cy="110" r="9" fill={isFemale ? '#f2b9a0' : '#e5a98d'} />
+        <circle cx="165" cy="110" r="9" fill={isFemale ? '#f2b9a0' : '#e5a98d'} />
+        {/* eyes */}
+        <ellipse cx="92" cy="105" rx="10" ry={eyeH} fill="#fff" />
+        <ellipse cx="128" cy="105" rx="10" ry={eyeH} fill="#fff" />
+        <circle cx="92" cy="105" r="3.2" fill="#222" />
+        <circle cx="128" cy="105" r="3.2" fill="#222" />
+        {/* brows (tone) */}
+        <path d={`M80,92 q12,${-8 + toneMod.brow} 24,-2`} stroke={isFemale ? '#a86b2a' : '#2a221d'} strokeWidth="4" fill="none" strokeLinecap="round"/>
+        <path d={`M116,90 q15,${-6 + toneMod.brow} 24,0`} stroke={isFemale ? '#a86b2a' : '#2a221d'} strokeWidth="4" fill="none" strokeLinecap="round"/>
+        {/* mouth (viseme-driven) */}
+        <rect x="92" y={mouthY} width="36" height={mouthH} rx="8" fill={isFemale ? '#e23a77' : '#b06464'} />
+        {/* shoulders/shirt */}
+        <path d="M50,185 q60,-32 120,0 v15 h-120 z" fill="url(#shirt)" />
+      </g>
+    </svg>
+  );
+}
+

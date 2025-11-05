@@ -1,0 +1,86 @@
+import React, { useState } from "react";
+import { useSessionStore } from "@/state/sessionStore";   // from Step 4
+import { finalizeScore } from "@/lib/objectionEngine";     // from Step 3
+
+type Props = {
+  /** If you already compute a rubric/base score elsewhere, pass it in. Defaults to 100. */
+  baseScoreFromRubric?: number;
+  /** Called when the call should end (lock input, stop TTS/animations, etc.) */
+  onEndCall?: () => void;
+};
+
+export default function EndAndScore({ baseScoreFromRubric, onEndCall }: Props) {
+  const { score } = useSessionStore(); // { total: number; deductions: number }
+  const [open, setOpen] = useState(false);
+  const [final, setFinal] = useState<number | null>(null);
+
+  function onEndAndScore() {
+    const base = typeof baseScoreFromRubric === "number" ? baseScoreFromRubric : 100;
+    const finalScore = finalizeScore(base, score); // clamps 0..100 after subtracting deductions
+    setFinal(finalScore);
+    setOpen(true);
+    onEndCall?.(); // signal chat to end (disable input, stop voice, etc.)
+  }
+
+  return (
+    <>
+      <button onClick={onEndAndScore}>End &amp; Score</button>
+
+      {open && (
+        <div
+          className="score-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="score-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50
+          }}
+        >
+          <div
+            className="score-card"
+            style={{
+              background: "#fff",
+              borderRadius: 12,
+              padding: 20,
+              width: 380,
+              maxWidth: "90%",
+              boxShadow: "0 10px 30px rgba(0,0,0,.2)"
+            }}
+          >
+            <h2 id="score-title" style={{ marginTop: 0 }}>Session Results</h2>
+
+            <p><strong>Final Score:</strong> {final}</p>
+            <p><strong>Deductions (objections):</strong> {score.deductions}</p>
+            <p>
+              <strong>Base Score (rubric):</strong>{" "}
+              {typeof baseScoreFromRubric === "number" ? baseScoreFromRubric : 100}
+            </p>
+
+            <p style={{ margin: "12px 0 16px", opacity: 0.85 }}>
+              {final !== null && (
+                final >= 90
+                  ? "Excellent — elite closer energy."
+                  : final >= 75
+                  ? "Strong — tighten your metrics language."
+                  : final >= 60
+                  ? "Okay — practice structured, measurable answers."
+                  : "Needs work — include metrics, tracking, contingency, reassurance."
+              )}
+            </p>
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setOpen(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
