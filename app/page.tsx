@@ -2,6 +2,16 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
+type SpeechRecognition = any;
+
+declare global {
+  interface Window {
+    SpeechRecognition?: any;
+    webkitSpeechRecognition?: any;
+    mozSpeechRecognition?: any;
+  }
+}
+
 /* =========================
    Types
 ========================= */
