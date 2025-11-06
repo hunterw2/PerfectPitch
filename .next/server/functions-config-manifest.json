@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "functions": {
+    "/api/did/tts": {},
+    "/api/doctor": {},
+    "/api/sim": {},
+    "/": {}
+  }
+}

@@ -248,15 +248,15 @@ function pickVoice(tone: string, gender: Gender) {
 }
 
 function getRecognition(): SpeechRecognition | null {
+  if (typeof window === 'undefined') return null; // <-- SSR guard (no runtime change)
   const w = window as any;
-  const SR: typeof window.SpeechRecognition =
-    w.SpeechRecognition || w.webkitSpeechRecognition || w.mozSpeechRecognition;
+  const SR = w.SpeechRecognition || w.webkitSpeechRecognition || w.mozSpeechRecognition;
   if (!SR) return null;
-  const rec = new (SR as any)();
+  const rec = new SR();
   rec.lang = 'en-US';
   rec.interimResults = true;
   rec.continuous = true;
-  rec.maxAlternatives = 1;
+  (rec as any).maxAlternatives = 1;
   return rec as SpeechRecognition;
 }
 
@@ -308,7 +308,7 @@ function analyzeObjections(lines: Line[]) {
   }
 
   const totalUnique = order.length;
-  const lastCategory = order.at(-1) ?? null;
+  const lastCategory = order.length ? order[order.length - 1] : null;
   const lastCount = lastCategory ? counts.get(lastCategory) ?? 0 : 0;
 
   return { counts, totalUnique, lastCategory, lastCount };
