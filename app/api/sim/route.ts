@@ -2,10 +2,10 @@
 import { NextResponse } from "next/server";
 
 
-/** Vercel-friendly flags (no behavior change) */
-export const runtime = "edge";            // run on Edge
-export const dynamic = "force-dynamic";   // disable static caching
-export const revalidate = 0;              // belt & suspenders
+// ✅ Use Node so process.env works on Vercel
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 /* ───────────────────────── Types ───────────────────────── */
 type Who = "you" | "doc";
