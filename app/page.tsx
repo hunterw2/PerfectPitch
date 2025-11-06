@@ -1,7 +1,5 @@
 'use client';
 
-// updated mobile layout
-
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 type SpeechRecognition = any;
@@ -250,15 +248,15 @@ function pickVoice(tone: string, gender: Gender) {
 }
 
 function getRecognition(): SpeechRecognition | null {
+  if (typeof window === 'undefined') return null; // <-- SSR guard (no runtime change)
   const w = window as any;
-  const SR: typeof window.SpeechRecognition =
-    w.SpeechRecognition || w.webkitSpeechRecognition || w.mozSpeechRecognition;
+  const SR = w.SpeechRecognition || w.webkitSpeechRecognition || w.mozSpeechRecognition;
   if (!SR) return null;
-  const rec = new (SR as any)();
+  const rec = new SR();
   rec.lang = 'en-US';
   rec.interimResults = true;
   rec.continuous = true;
-  rec.maxAlternatives = 1;
+  (rec as any).maxAlternatives = 1;
   return rec as SpeechRecognition;
 }
 
@@ -310,7 +308,7 @@ function analyzeObjections(lines: Line[]) {
   }
 
   const totalUnique = order.length;
-  const lastCategory = order.at(-1) ?? null;
+  const lastCategory = order.length ? order[order.length - 1] : null;
   const lastCount = lastCategory ? counts.get(lastCategory) ?? 0 : 0;
 
   return { counts, totalUnique, lastCategory, lastCount };
@@ -393,22 +391,22 @@ export default function Page() {
   const [interim, setInterim] = useState('');
 
   // === Mic Lock State and Helper Functions ===
-  const [micLocked, setMicLocked] = useState(false); // mic locked after End & Score
+const [micLocked, setMicLocked] = useState(false); // mic locked after End & Score
 
-  function stopMic() {
+function stopMic() {
+  try {
+    (window as any).recognition?.stop?.();
+  } catch {}
+}
+
+function startMicIfAllowed() {
+  // only start if not Text Only and not locked
+  if (!textOnly && !micLocked) {
     try {
-      (window as any).recognition?.stop?.();
+      (window as any).recognition?.start?.();
     } catch {}
   }
-
-  function startMicIfAllowed() {
-    // only start if not Text Only and not locked
-    if (!textOnly && !micLocked) {
-      try {
-        (window as any).recognition?.start?.();
-      } catch {}
-    }
-  }
+}
 
   /* Scoring */
   const [score, setScore] = useState<ScoreResult | null>(null);
@@ -446,12 +444,12 @@ export default function Page() {
   }, [messages.length]);
 
   useEffect(() => {
-    if (textOnly) {
-      stopRecognition();        // hard stop the mic
-      setListening(false);      // UI state
-      setHandsFree(false);      // avoid auto-send voice flow
-    }
-  }, [textOnly]);
+  if (textOnly) {
+    stopRecognition();        // hard stop the mic
+    setListening(false);      // UI state
+    setHandsFree(false);      // avoid auto-send voice flow
+  }
+}, [textOnly]);
 
   /* Blink timer */
   useEffect(() => {
@@ -462,20 +460,20 @@ export default function Page() {
     return () => clearInterval(t);
   }, []);
 
-  useEffect(() => {
-    const onVoices = () => setVoicesReady(true);
+useEffect(() => {
+  const onVoices = () => setVoicesReady(true);
+  try {
+    window.speechSynthesis.addEventListener?.('voiceschanged', onVoices);
+  } catch {}
+  // Safari may not fire voiceschanged — nudge once
+  const t = setTimeout(() => setVoicesReady(true), 400);
+  return () => {
+    clearTimeout(t);
     try {
-      window.speechSynthesis.addEventListener?.('voiceschanged', onVoices);
+      window.speechSynthesis.removeEventListener?.('voiceschanged', onVoices);
     } catch {}
-    // Safari may not fire voiceschanged — nudge once
-    const t = setTimeout(() => setVoicesReady(true), 400);
-    return () => {
-      clearTimeout(t);
-      try {
-        window.speechSynthesis.removeEventListener?.('voiceschanged', onVoices);
-      } catch {}
-    };
-  }, []);
+  };
+}, []);
 
   /* Reset convo when scenario changes (except tone) */
   useEffect(() => {
@@ -518,7 +516,7 @@ export default function Page() {
 
     (rec as any).onresult = (e: any) => {
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (textOnly) return; //ignore speech results in Text Only
+       if (textOnly) return; //ignore speech results in Text Only
         const r = e.results[i];
         const txt = r[0].transcript;
         if (r.isFinal) {
@@ -526,9 +524,9 @@ export default function Page() {
           setInterim('');
           if (handsFree) {
             if (sendTimer) {
-              clearTimeout(sendTimer);
-              sendTimer = null;
-            }
+               clearTimeout(sendTimer);
+	       sendTimer = null;
+              }
             // 900ms grace period so brief pauses don’t fire mid-sentence
             sendTimer = window.setTimeout(() => {
               const toSend = partialBuffer.trim();
@@ -559,18 +557,18 @@ export default function Page() {
 
   /* Natural-ish TTS with viseme pulses */
   function speakAndResume(text: string) {
-    if (!text || ended || textOnly) return;
+  if (!text || ended || textOnly) return;
 
-    // ✅ HARD STOP any live recognition before speaking to prevent self-hearing
-    stopRecognition();
-    setListening(false);
+  // ✅ HARD STOP any live recognition before speaking to prevent self-hearing
+  stopRecognition();
+  setListening(false);
 
-    if (!voicesReady) {
-      setTimeout(() => speakAndResume(text), 120);
-      return;
-    }
+  if (!voicesReady) {
+    setTimeout(() => speakAndResume(text), 120);
+    return;
+  }
 
-    ttsSpeakingRef.current = true;
+  ttsSpeakingRef.current = true;
 
     // Pause mic to avoid echo
     const wasListening = listening;
@@ -587,15 +585,15 @@ export default function Page() {
 
     u.onstart = () => { setIsSpeaking(true); setViseme(0.1); };
     u.onend = () => {
-      setIsSpeaking(false);
-      setViseme(0);
-      ttsSpeakingRef.current = false;
+  setIsSpeaking(false);
+  setViseme(0);
+  ttsSpeakingRef.current = false;
 
-      // ✅ Only restart mic after a small delay (avoid self-hearing echo)
-      if ((handsFree || wasListening) && !textOnly && !ended) {
-        setTimeout(() => startVoice(), 600);
-      }
-    };
+  // ✅ Only restart mic after a small delay (avoid self-hearing echo)
+  if ((handsFree || wasListening) && !textOnly && !ended) {
+    setTimeout(() => startVoice(), 600);
+  }
+};
     u.onboundary = () => {
       const amp = 0.35 + Math.random() * 0.55; // 0..1
       setViseme(amp);
@@ -627,106 +625,106 @@ export default function Page() {
     return reply;
   }
 
-  async function scoreNow(lines: Line[]) {
-    try {
-      const resp = await fetch('/api/score', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        cache: 'no-store',                         // <- prevent reuse
-        body: JSON.stringify({
-          scenario,
-          messages: lines,
-          transcript: lines
-            .map(l => `${l.who === 'you' ? 'Rep' : roleLabel(scenario.vertical)}: ${l.text}`)
-            .join('\n'),
-        }),
-      });
+ async function scoreNow(lines: Line[]) {
+  try {
+    const resp = await fetch('/api/score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',                         // <- prevent reuse
+      body: JSON.stringify({
+        scenario,
+        messages: lines,
+        transcript: lines
+          .map(l => `${l.who === 'you' ? 'Rep' : roleLabel(scenario.vertical)}: ${l.text}`)
+          .join('\n'),
+      }),
+    });
 
-      if (!resp.ok) throw new Error('Score API not ok');
+    if (!resp.ok) throw new Error('Score API not ok');
 
-      const d = await resp.json();
+    const d = await resp.json();
 
-      const scoreNum =
-        Number.isFinite(d?.score) ? Math.round(Number(d.score) * 10) / 10 : 6.5;
+    const scoreNum =
+      Number.isFinite(d?.score) ? Math.round(Number(d.score) * 10) / 10 : 6.5;
 
-      const res: ScoreResult = {
-        score: scoreNum,
-        wentWell: (d?.wentWell ?? d?.good ?? '').trim(),
-        improve: (d?.improve ?? '').trim(),
-        next: (d?.next ?? d?.nextTime ?? '').trim(),
-      };
+    const res: ScoreResult = {
+      score: scoreNum,
+      wentWell: (d?.wentWell ?? d?.good ?? '').trim(),
+      improve: (d?.improve ?? '').trim(),
+      next: (d?.next ?? d?.nextTime ?? '').trim(),
+    };
 
-      setScore(res);
+    setScore(res);
 
-      saveRun({
-        ts: Date.now(),
-        score: res.score,
-        vertical: scenario.vertical,
-        difficulty: scenario.difficulty,
-        product: scenario.product,
-        tone: scenario.tone,
-        persona: scenario.persona,
-      });
-      saveHistory(lines);
-    } catch (err) {
-      // 🔁 Dynamic offline fallback (varies per conversation)
-      const rep = lines.filter(l => l.who === 'you').map(l => l.text).join(' ');
-      const doc = lines.filter(l => l.who === 'doc').map(l => l.text).join(' ');
-      const repQs = (rep.match(/\?/g) || []).length;
-      const objCount = (doc.match(/price|expensive|budget|time|busy|coverage|insurance|prior\s*auth|risk|not\s*interested|send\s+info/gi) || []).length;
+    saveRun({
+      ts: Date.now(),
+      score: res.score,
+      vertical: scenario.vertical,
+      difficulty: scenario.difficulty,
+      product: scenario.product,
+      tone: scenario.tone,
+      persona: scenario.persona,
+    });
+    saveHistory(lines);
+  } catch (err) {
+    // 🔁 Dynamic offline fallback (varies per conversation)
+    const rep = lines.filter(l => l.who === 'you').map(l => l.text).join(' ');
+    const doc = lines.filter(l => l.who === 'doc').map(l => l.text).join(' ');
+    const repQs = (rep.match(/\?/g) || []).length;
+    const objCount = (doc.match(/price|expensive|budget|time|busy|coverage|insurance|prior\s*auth|risk|not\s*interested|send\s+info/gi) || []).length;
 
-      let s = 5;
-      s += Math.min(repQs * 0.35, 2);               // discovery
-      s -= Math.min(objCount * 0.4, 1.2);           // objection tax
-      s += (Math.random() - 0.5) * 0.5;             // small jitter
-      s = Math.max(0, Math.min(10, s));
-      s = Math.round(s * 10) / 10;                  // 0.1 precision
+    let s = 5;
+    s += Math.min(repQs * 0.35, 2);               // discovery
+    s -= Math.min(objCount * 0.4, 1.2);           // objection tax
+    s += (Math.random() - 0.5) * 0.5;             // small jitter
+    s = Math.max(0, Math.min(10, s));
+    s = Math.round(s * 10) / 10;                  // 0.1 precision
 
-      setScore({
-        score: s,
-        wentWell: repQs >= 2
-          ? 'Strong discovery and natural flow.'
-          : 'Good rapport; add 1–2 sharper discovery questions.',
-        improve: objCount > 0
-          ? 'Tighten objection handling with one-sentence answers.'
-          : 'Translate features into outcomes tied to the persona.',
-        next: 'Propose a crisp next step and a concrete time.',
-      });
+    setScore({
+      score: s,
+      wentWell: repQs >= 2
+        ? 'Strong discovery and natural flow.'
+        : 'Good rapport; add 1–2 sharper discovery questions.',
+      improve: objCount > 0
+        ? 'Tighten objection handling with one-sentence answers.'
+        : 'Translate features into outcomes tied to the persona.',
+      next: 'Propose a crisp next step and a concrete time.',
+    });
 
-      saveRun({
-        ts: Date.now(),
-        score: s,
-        vertical: scenario.vertical,
-        difficulty: scenario.difficulty,
-        product: scenario.product,
-        tone: scenario.tone,
-        persona: scenario.persona,
-      });
-      saveHistory(lines);
-    }
+    saveRun({
+      ts: Date.now(),
+      score: s,
+      vertical: scenario.vertical,
+      difficulty: scenario.difficulty,
+      product: scenario.product,
+      tone: scenario.tone,
+      persona: scenario.persona,
+    });
+    saveHistory(lines);
   }
+}
   /* ---- Sending user input ---- */
   function pushYou(text: string) {
     setMessages(prev => [...prev, { who: 'you', text }]);
   }
 
-  async function respondFromDoc(lines: Line[]) {
-    // 1) Ask your simulator as usual
-    let raw = await fetchSimReply(lines);
+async function respondFromDoc(lines: Line[]) {
+  // 1) Ask your simulator as usual
+  let raw = await fetchSimReply(lines);
 
-    // 2) Guard: remove non-pharma insurance talk
-    raw = sanitizeForVertical(scenario.vertical, raw);
+  // 2) Guard: remove non-pharma insurance talk
+  raw = sanitizeForVertical(scenario.vertical, raw);
 
-    // 3) Tiny anti-repeat only (no templated closes)
-    const lastDoc = [...lines].reverse().find(l => l.who === 'doc')?.text || '';
-    if (lastDoc && lastDoc.trim().toLowerCase() === raw.trim().toLowerCase()) {
-      raw = "Makes sense—what would you need from me to get this started?";
-    }
-
-    // 4) Commit reply and speak if Avatar view
-    setMessages(prev => [...prev, { who: 'doc', text: raw }]);
-    if (view === 'avatar') speakAndResume(raw);
+  // 3) Tiny anti-repeat only (no templated closes)
+  const lastDoc = [...lines].reverse().find(l => l.who === 'doc')?.text || '';
+  if (lastDoc && lastDoc.trim().toLowerCase() === raw.trim().toLowerCase()) {
+    raw = "Makes sense—what would you need from me to get this started?";
   }
+
+  // 4) Commit reply and speak if Avatar view
+  setMessages(prev => [...prev, { who: 'doc', text: raw }]);
+  if (view === 'avatar') speakAndResume(raw);
+}
   async function sendImmediate(raw: string) {
     if (ended) return;
     const text = raw.trim();
@@ -777,22 +775,20 @@ export default function Page() {
   const tintBG = difficultyTint[scenario.difficulty];
 
   return (
-    <div className="pp-root" style={{ minHeight: '100vh', background: '#0b1220', color: '#e5ecff' }}>
+    <div style={{ minHeight: '100vh', background: '#0b1220', color: '#e5ecff' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px' }}>
         {/* Header */}
-        <div className="pp-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <img
-              className="pp-logo"
-              src="/logo.png"
-              alt="PerfectPitch Logo"
-              style={{ width: 100, height: 100, borderRadius: 15 }}
-            />
-            <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: 0.4 }}>
-              PerfectPitch 
-            </h1>
-          </div>
-          <div style={{ display: 'flex', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+    <img
+      src="/logo.png"
+      alt="PerfectPitch Logo"
+      style={{ width: 100, height: 100, borderRadius: 15 }}
+    />
+    <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: 0.4 }}>
+      PerfectPitch 
+    </h1>
+  </div>          <div style={{ display: 'flex', gap: 12 }}>
             <button
               onClick={() => setShowHL(true)}
               style={{
@@ -850,7 +846,6 @@ export default function Page() {
 
         {/* Controls */}
         <div
-          className="pp-controls"
           style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(5, minmax(0,1fr))',
@@ -917,23 +912,23 @@ export default function Page() {
         </div>
 
         {/* Action row (voice controls; gender toggle only on Avatar view) */}
-        <div className="pp-actions" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
           <button
-            onClick={() => (listening ? stopRecognition() : startVoice())}
-            disabled={textOnly}
-            style={{
-              padding:'8px 12px',
-              borderRadius:10,
-              background: textOnly ? '#334155' : (listening ? '#ef4444' : '#22c55e'),
-              border:'1px solid rgba(255,255,255,.15)',
-              color:'#0b1220',
-              cursor: textOnly ? 'not-allowed' : 'pointer',
-              fontWeight:600,
-              opacity: textOnly ? 0.6 : 1,
-            }}
-          >
-            {textOnly ? 'Text Only' : (listening ? 'Stop Voice' : 'Start Voice')}
-          </button>
+  onClick={() => (listening ? stopRecognition() : startVoice())}
+  disabled={textOnly}
+  style={{
+    padding:'8px 12px',
+    borderRadius:10,
+    background: textOnly ? '#334155' : (listening ? '#ef4444' : '#22c55e'),
+    border:'1px solid rgba(255,255,255,.15)',
+    color:'#0b1220',
+    cursor: textOnly ? 'not-allowed' : 'pointer',
+    fontWeight:600,
+    opacity: textOnly ? 0.6 : 1,
+  }}
+>
+  {textOnly ? 'Text Only' : (listening ? 'Stop Voice' : 'Start Voice')}
+</button>
 
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, opacity: 0.9 }}>
             <input type="checkbox" checked={handsFree} onChange={e => setHandsFree(e.target.checked)} disabled={ended || textOnly} />
@@ -942,12 +937,12 @@ export default function Page() {
 
           {/* NEW: Text-Only toggle */}
           <label style={{ display:'inline-flex', alignItems:'center', gap:8, fontSize:14, opacity:0.9 }}>
-            <input
-              type="checkbox"
-              checked={textOnly}
-              onChange={e => setTextOnly(e.target.checked)}
-            />
-            Text Only (no mic)
+  <input
+    type="checkbox"
+    checked={textOnly}
+    onChange={e => setTextOnly(e.target.checked)}
+  />
+  Text Only (no mic)
           </label>
 
           {view === 'avatar' && (
@@ -994,7 +989,6 @@ export default function Page() {
 
         {/* Main content split */}
         <div
-          className="pp-main"
           style={{
             display: 'grid',
             gridTemplateColumns: view === 'chat' ? '1fr' : '1fr 360px',
@@ -1004,7 +998,6 @@ export default function Page() {
         >
           {/* Chat card */}
           <div
-            className="pp-card"
             style={{
               background: `linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01))`,
               border: '1px solid #1f2a44',
@@ -1061,8 +1054,8 @@ export default function Page() {
               )}
             </div>
 
-            {/* Input row (now sticky like iMessage on mobile) */}
-            <div className="pp-inputbar" style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+            {/* Input row */}
+            <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
               <input
                 value={input}
                 onChange={e => setInput(e.target.value)}
@@ -1148,10 +1141,10 @@ export default function Page() {
                       padding: '4px 10px',
                       borderRadius: 999,
                       background: '#22c55e22',
-                      border: '1px solid '#22c55e55',
+                      border: '1px solid #22c55e55',
                       color: '#bbf7d0',
                       fontWeight: 700,
-                    } as any}
+                    }}
                   >
                     {Number(score.score).toFixed(1)} / 10
                   </div>
@@ -1232,7 +1225,6 @@ export default function Page() {
           {/* Avatar card (only visible in Avatar view) */}
           {view === 'avatar' && (
             <div
-              className="pp-card"
               style={{
                 background: `linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01))`,
                 border: '1px solid #1f2a44',
@@ -1252,12 +1244,12 @@ export default function Page() {
                   height: 320,
                   borderRadius: 18,
                   background: '#0b1220',
-                  border: '1px solid '#17223b',
+                  border: '1px solid #17223b',
                   display: 'grid',
                   placeItems: 'center',
                   padding: 10,
                   position: 'relative',
-                } as any}
+                }}
               >
                 {gender === 'male' ? (
                   <MaleAvatar thinking={listening && !ttsSpeakingRef.current} blink={blink} viseme={isSpeaking ? viseme : 0} />
@@ -1289,7 +1281,6 @@ export default function Page() {
         >
           <div
             onClick={e => e.stopPropagation()}
-            className="pp-card"
             style={{
               width: 840,
               maxWidth: '92vw',
@@ -1395,65 +1386,6 @@ export default function Page() {
           </div>
         </div>
       )}
-
-      {/* ---------- Mobile polish (no logic changes) ---------- */}
-      <style jsx global>{`
-        @media (max-width: 640px) {
-          html, body, .pp-root {
-            overflow-x: hidden;
-            width: 100%;
-          }
-
-          .pp-header {
-            flex-direction: column;
-            align-items: center !important;
-            text-align: center;
-            gap: 8px;
-          }
-          .pp-logo { width: 64px !important; height: 64px !important; }
-          .pp-header h1 { font-size: 20px !important; }
-
-          .pp-controls {
-            grid-template-columns: 1fr !important; /* stack selects */
-            gap: 10px !important;
-          }
-
-          .pp-actions {
-            flex-wrap: wrap !important;
-            justify-content: center !important;
-            gap: 10px !important;
-          }
-          .pp-actions > * {
-            flex: 1 1 100%;
-            text-align: center;
-          }
-
-          .pp-main {
-            grid-template-columns: 1fr !important; /* single column */
-          }
-
-          #chatScroll {
-            max-height: 58vh !important;
-          }
-
-          .pp-card {
-            padding: 12px !important;
-            border-radius: 12px !important;
-          }
-
-          /* iMessage-style sticky input inside the chat card */
-          .pp-inputbar {
-            position: sticky;
-            bottom: 0;
-            background: linear-gradient(180deg, rgba(15,23,42,0.6), #0f172a 60%);
-            backdrop-filter: saturate(1.2) blur(4px);
-            padding-top: 10px;
-            margin-top: 10px;
-            z-index: 5;
-          }
-        }
-      `}</style>
     </div>
   );
 }
- 

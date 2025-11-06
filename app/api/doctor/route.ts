@@ -1,6 +1,7 @@
 // app/api/score/route.ts
 import { NextResponse } from 'next/server';
 
+
 export const dynamic = 'force-dynamic';            // ⛔️ disable route caching
 export const revalidate = 0;
 
