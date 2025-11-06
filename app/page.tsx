@@ -12,6 +12,32 @@ declare global {
   }
 }
 
+// Wait until speechSynthesis voices are loaded (Chrome/Safari can be async)
+function waitForVoices(timeoutMs = 3000): Promise<void> {
+  return new Promise((resolve) => {
+    const synth = window.speechSynthesis;
+    const done = () => resolve();
+    // already have voices?
+    if (synth.getVoices().length > 0) return done();
+
+    let settled = false;
+    const onVoices = () => {
+      if (settled) return;
+      settled = true;
+      try { synth.removeEventListener?.('voiceschanged', onVoices); } catch {}
+      done();
+    };
+
+    try { synth.addEventListener?.('voiceschanged', onVoices); } catch {}
+
+    // nudge some browsers to populate voices
+    synth.getVoices();
+
+    // hard timeout fallback so we never hang
+    setTimeout(onVoices, timeoutMs);
+  });
+}
+
 /* =========================
    Types
 ========================= */
