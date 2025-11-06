@@ -69,7 +69,6 @@ const roleLabel = (v: Vertical) => (v === 'pharma' ? 'Provider' : 'Prospect');
 ========================= */
 function bulletify(s: string): string[] {
   if (!s) return [];
-  // Split on newlines, bullets, or sentence breaks; keep it simple and robust
   const parts = s
     .split(/\n|•|-\s|;\s|\. (?=[A-Z(])/g)
     .map(t => t.trim().replace(/^[•-\s]+/, ''))
@@ -104,26 +103,18 @@ function MaleAvatar({ thinking, blink, viseme }: { thinking: boolean; blink: boo
       </defs>
 
       <g filter="url(#softShadowM)">
-        {/* neck */}
         <rect x="95" y="135" width="30" height="20" rx="8" fill="url(#skinM)" />
-        {/* head */}
         <circle cx="110" cy="105" r="55" fill="url(#skinM)" />
-        {/* hair */}
         <path d="M55,100 Q65,45 110,45 Q155,45 165,100 Q150,80 110,75 Q70,80 55,100 Z" fill="#3b3026" />
-        {/* ears */}
         <circle cx="55" cy="110" r="9" fill="#e5a98d" />
         <circle cx="165" cy="110" r="9" fill="#e5a98d" />
-        {/* eyes */}
         <ellipse cx="92" cy="105" rx="10" ry={eyeRY} fill="#fff" />
         <ellipse cx="128" cy="105" rx="10" ry={eyeRY} fill="#fff" />
         <circle cx="92" cy="105" r={eyeRY > 2 ? 3.2 : 0} fill="#222" />
         <circle cx="128" cy="105" r={eyeRY > 2 ? 3.2 : 0} fill="#222" />
-        {/* brows */}
         <path d={`M80,${92 - browLift} q12,-8 24,-2`} stroke="#2a221d" strokeWidth="4" fill="none" strokeLinecap="round" />
         <path d={`M116,${90 - browLift} q15,-6 24,0`} stroke="#2a221d" strokeWidth="4" fill="none" strokeLinecap="round" />
-        {/* mouth (animate openness) */}
         <path d={`M92,${128} q18,${mouthOpen} 36,0`} stroke="#b06464" strokeWidth="5" fill="none" strokeLinecap="round" />
-        {/* shoulders/shirt */}
         <path d="M50,185 q60,-32 120,0 v15 h-120 z" fill="url(#shirtM)" />
       </g>
 
@@ -158,29 +149,20 @@ function FemaleAvatar({ thinking, blink, viseme }: { thinking: boolean; blink: b
       </defs>
 
       <g filter="url(#softShadowF)">
-        {/* neck */}
         <rect x="95" y="135" width="30" height="20" rx="8" fill="url(#skinF)" />
-        {/* head */}
         <circle cx="110" cy="105" r="55" fill="url(#skinF)" />
-        {/* long blonde hair */}
         <path d="M55,95 q5,-48 55,-52 q50,4 55,52 v35 q-15,25 -55,28 q-40,-3 -55,-28 z" fill="#ffcc66" />
         <path d="M55,96 q22,-28 55,-30 q33,2 55,30 q-20,-15 -55,-16 q-35,1 -55,16 z" fill="#ffcf70" />
-        {/* ears */}
         <circle cx="55" cy="110" r="8.5" fill="#f2b9a0" />
         <circle cx="165" cy="110" r="8.5" fill="#f2b9a0" />
-        {/* eyes */}
         <ellipse cx="92" cy="108" rx="10" ry={eyeRY} fill="#fff" />
         <ellipse cx="128" cy="108" rx="10" ry={eyeRY} fill="#fff" />
         <circle cx="92" cy="108" r={eyeRY > 2 ? 3 : 0} fill="#222" />
         <circle cx="128" cy="108" r={eyeRY > 2 ? 3 : 0} fill="#222" />
-        {/* lashes */}
         {eyeRY > 2 && <path d="M83,102 l-6,-3 M99,102 l6,-3 M119,102 l6,-3 M135,102 l6,-3" stroke="#222" strokeWidth="1.5" />}
-        {/* brows */}
         <path d={`M80,${95 - browLift} q12,-7 24,-2`} stroke="#a86b2a" strokeWidth="4" fill="none" strokeLinecap="round" />
         <path d={`M116,${94 - browLift} q15,-5 24,0`} stroke="#a86b2a" strokeWidth="4" fill="none" strokeLinecap="round" />
-        {/* lipstick / mouth */}
         <path d={`M92,130 q18,${mouthOpen} 36,0`} stroke="#e23a77" strokeWidth="6" fill="none" strokeLinecap="round" />
-        {/* shoulders/shirt */}
         <path d="M50,185 q60,-32 120,0 v15 h-120 z" fill="url(#shirtF)" />
       </g>
 
@@ -248,15 +230,15 @@ function pickVoice(tone: string, gender: Gender) {
 }
 
 function getRecognition(): SpeechRecognition | null {
-  if (typeof window === 'undefined') return null; // <-- SSR guard (no runtime change)
   const w = window as any;
-  const SR = w.SpeechRecognition || w.webkitSpeechRecognition || w.mozSpeechRecognition;
+  const SR: typeof window.SpeechRecognition =
+    w.SpeechRecognition || w.webkitSpeechRecognition || w.mozSpeechRecognition;
   if (!SR) return null;
-  const rec = new SR();
+  const rec = new (SR as any)();
   rec.lang = 'en-US';
   rec.interimResults = true;
   rec.continuous = true;
-  (rec as any).maxAlternatives = 1;
+  rec.maxAlternatives = 1;
   return rec as SpeechRecognition;
 }
 
@@ -295,7 +277,6 @@ function classifyObjection(text: string): ObjectionKey | null {
 }
 
 function analyzeObjections(lines: Line[]) {
-  // Count unique objections by the prospect (doc) and repetitions by category
   const counts = new Map<ObjectionKey, number>();
   const order: ObjectionKey[] = [];
 
@@ -308,7 +289,7 @@ function analyzeObjections(lines: Line[]) {
   }
 
   const totalUnique = order.length;
-  const lastCategory = order.length ? order[order.length - 1] : null;
+  const lastCategory = order.at(-1) ?? null;
   const lastCount = lastCategory ? counts.get(lastCategory) ?? 0 : 0;
 
   return { counts, totalUnique, lastCategory, lastCount };
@@ -321,10 +302,7 @@ function shouldMoveOn(
   const { totalUnique, lastCategory, lastCount } = analyzeObjections(lines);
   const limit = OBJECTION_LIMIT[scenario.difficulty];
 
-  // If we already hit the unique-objection cap for the difficulty, time to move on.
   if (totalUnique >= limit) return { acceptAndClose: true, acceptThisOne: true };
-
-  // If the current category has been brought up twice, accept and progress.
   if (lastCategory && lastCount >= 2) return { acceptAndClose: false, acceptThisOne: true };
 
   return { acceptAndClose: false, acceptThisOne: false };
@@ -332,14 +310,12 @@ function shouldMoveOn(
 
 function sanitizeForVertical(vertical: Vertical, reply: string) {
   if (vertical !== 'pharma') {
-    // strip/soften insurance/coverage talk for non-pharma
     reply = reply.replace(/\b(insurance|coverage|copay|prior authorization)\b/gi, 'options');
   }
   return reply;
 }
 
 function acceptanceLine(category: ObjectionKey | null) {
-  // Brief “accept + transition” lines after 2 rounds on the same objection
   const map: Partial<Record<ObjectionKey, string>> = {
     price:
       "Totally fair—let’s structure it so the cost lines up with the value you’ll see. If that’s reasonable, the next step is a quick kickoff.",
@@ -391,22 +367,13 @@ export default function Page() {
   const [interim, setInterim] = useState('');
 
   // === Mic Lock State and Helper Functions ===
-const [micLocked, setMicLocked] = useState(false); // mic locked after End & Score
-
-function stopMic() {
-  try {
-    (window as any).recognition?.stop?.();
-  } catch {}
-}
-
-function startMicIfAllowed() {
-  // only start if not Text Only and not locked
-  if (!textOnly && !micLocked) {
-    try {
-      (window as any).recognition?.start?.();
-    } catch {}
+  const [micLocked, setMicLocked] = useState(false);
+  function stopMic() { try { (window as any).recognition?.stop?.(); } catch {} }
+  function startMicIfAllowed() {
+    if (!textOnly && !micLocked) {
+      try { (window as any).recognition?.start?.(); } catch {}
+    }
   }
-}
 
   /* Scoring */
   const [score, setScore] = useState<ScoreResult | null>(null);
@@ -444,12 +411,12 @@ function startMicIfAllowed() {
   }, [messages.length]);
 
   useEffect(() => {
-  if (textOnly) {
-    stopRecognition();        // hard stop the mic
-    setListening(false);      // UI state
-    setHandsFree(false);      // avoid auto-send voice flow
-  }
-}, [textOnly]);
+    if (textOnly) {
+      stopRecognition();
+      setListening(false);
+      setHandsFree(false);
+    }
+  }, [textOnly]);
 
   /* Blink timer */
   useEffect(() => {
@@ -460,20 +427,15 @@ function startMicIfAllowed() {
     return () => clearInterval(t);
   }, []);
 
-useEffect(() => {
-  const onVoices = () => setVoicesReady(true);
-  try {
-    window.speechSynthesis.addEventListener?.('voiceschanged', onVoices);
-  } catch {}
-  // Safari may not fire voiceschanged — nudge once
-  const t = setTimeout(() => setVoicesReady(true), 400);
-  return () => {
-    clearTimeout(t);
-    try {
-      window.speechSynthesis.removeEventListener?.('voiceschanged', onVoices);
-    } catch {}
-  };
-}, []);
+  useEffect(() => {
+    const onVoices = () => setVoicesReady(true);
+    try { window.speechSynthesis.addEventListener?.('voiceschanged', onVoices); } catch {}
+    const t = setTimeout(() => setVoicesReady(true), 400);
+    return () => {
+      clearTimeout(t);
+      try { window.speechSynthesis.removeEventListener?.('voiceschanged', onVoices); } catch {}
+    };
+  }, []);
 
   /* Reset convo when scenario changes (except tone) */
   useEffect(() => {
@@ -497,10 +459,9 @@ useEffect(() => {
   }
 
   function startVoice() {
-    if (textOnly) return;  // 🚫 never start mic in Text Only
-    // ...rest of your existing code
-    if (ended || textOnly) return; // respect ended + text-only
-    if (ttsSpeakingRef.current) return; // wait until TTS ends
+    if (textOnly) return;
+    if (ended || textOnly) return;
+    if (ttsSpeakingRef.current) return;
     const rec = getRecognition();
     if (!rec) {
       alert('Speech Recognition not supported in this browser. Try Chrome on desktop.');
@@ -510,24 +471,19 @@ useEffect(() => {
     setListening(true);
     setInterim('');
 
-    // Grace period: don’t auto-send on tiny pauses
     let partialBuffer = '';
     let sendTimer: number | ReturnType<typeof setTimeout> | null = null;
 
     (rec as any).onresult = (e: any) => {
       for (let i = e.resultIndex; i < e.results.length; i++) {
-       if (textOnly) return; //ignore speech results in Text Only
+        if (textOnly) return;
         const r = e.results[i];
         const txt = r[0].transcript;
         if (r.isFinal) {
           partialBuffer = (partialBuffer + ' ' + txt).trim();
           setInterim('');
           if (handsFree) {
-            if (sendTimer) {
-               clearTimeout(sendTimer);
-	       sendTimer = null;
-              }
-            // 900ms grace period so brief pauses don’t fire mid-sentence
+            if (sendTimer) { clearTimeout(sendTimer); sendTimer = null; }
             sendTimer = window.setTimeout(() => {
               const toSend = partialBuffer.trim();
               partialBuffer = '';
@@ -542,35 +498,22 @@ useEffect(() => {
       }
     };
 
-    (rec as any).onend = () => {
-      setListening(false);
-    };
-
+    (rec as any).onend = () => { setListening(false); };
     (rec as any).onerror = () => setListening(false);
 
-    try {
-      (rec as any).start();
-    } catch {
-      // ignore
-    }
+    try { (rec as any).start(); } catch {}
   }
 
   /* Natural-ish TTS with viseme pulses */
   function speakAndResume(text: string) {
-  if (!text || ended || textOnly) return;
+    if (!text || ended || textOnly) return;
+    stopRecognition();
+    setListening(false);
 
-  // ✅ HARD STOP any live recognition before speaking to prevent self-hearing
-  stopRecognition();
-  setListening(false);
+    if (!voicesReady) { setTimeout(() => speakAndResume(text), 120); return; }
 
-  if (!voicesReady) {
-    setTimeout(() => speakAndResume(text), 120);
-    return;
-  }
+    ttsSpeakingRef.current = true;
 
-  ttsSpeakingRef.current = true;
-
-    // Pause mic to avoid echo
     const wasListening = listening;
     if (wasListening) stopRecognition();
     ttsSpeakingRef.current = true;
@@ -585,15 +528,13 @@ useEffect(() => {
 
     u.onstart = () => { setIsSpeaking(true); setViseme(0.1); };
     u.onend = () => {
-  setIsSpeaking(false);
-  setViseme(0);
-  ttsSpeakingRef.current = false;
-
-  // ✅ Only restart mic after a small delay (avoid self-hearing echo)
-  if ((handsFree || wasListening) && !textOnly && !ended) {
-    setTimeout(() => startVoice(), 600);
-  }
-};
+      setIsSpeaking(false);
+      setViseme(0);
+      ttsSpeakingRef.current = false;
+      if ((handsFree || wasListening) && !textOnly && !ended) {
+        setTimeout(() => startVoice(), 600);
+      }
+    };
     u.onboundary = () => {
       const amp = 0.35 + Math.random() * 0.55; // 0..1
       setViseme(amp);
@@ -606,7 +547,6 @@ useEffect(() => {
 
   /* ---- Network helpers to your existing API routes ---- */
   async function fetchSimReply(lines: Line[]): Promise<string> {
-    // quick guard so non-pharma never gets “coverage/insurance” replies injected by model
     const resp = await fetch('/api/sim', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -616,7 +556,6 @@ useEffect(() => {
     const data = await resp.json();
     let reply = (data.text ?? data.reply ?? 'Understood.') as string;
 
-    // Safety pass: never mention insurance unless pharma
     if (scenario.vertical !== 'pharma') {
       if (/\b(coverage|covered|insurance|payer|formulary|prior ?auth|authorization)\b/i.test(reply)) {
         reply = 'Got it—let’s stick to the essentials for now.';
@@ -625,106 +564,102 @@ useEffect(() => {
     return reply;
   }
 
- async function scoreNow(lines: Line[]) {
-  try {
-    const resp = await fetch('/api/score', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      cache: 'no-store',                         // <- prevent reuse
-      body: JSON.stringify({
-        scenario,
-        messages: lines,
-        transcript: lines
-          .map(l => `${l.who === 'you' ? 'Rep' : roleLabel(scenario.vertical)}: ${l.text}`)
-          .join('\n'),
-      }),
-    });
+  async function scoreNow(lines: Line[]) {
+    try {
+      const resp = await fetch('/api/score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({
+          scenario,
+          messages: lines,
+          transcript: lines
+            .map(l => `${l.who === 'you' ? 'Rep' : roleLabel(scenario.vertical)}: ${l.text}`)
+            .join('\n'),
+        }),
+      });
 
-    if (!resp.ok) throw new Error('Score API not ok');
+      if (!resp.ok) throw new Error('Score API not ok');
 
-    const d = await resp.json();
+      const d = await resp.json();
 
-    const scoreNum =
-      Number.isFinite(d?.score) ? Math.round(Number(d.score) * 10) / 10 : 6.5;
+      const scoreNum =
+        Number.isFinite(d?.score) ? Math.round(Number(d.score) * 10) / 10 : 6.5;
 
-    const res: ScoreResult = {
-      score: scoreNum,
-      wentWell: (d?.wentWell ?? d?.good ?? '').trim(),
-      improve: (d?.improve ?? '').trim(),
-      next: (d?.next ?? d?.nextTime ?? '').trim(),
-    };
+      const res: ScoreResult = {
+        score: scoreNum,
+        wentWell: (d?.wentWell ?? d?.good ?? '').trim(),
+        improve: (d?.improve ?? '').trim(),
+        next: (d?.next ?? d?.nextTime ?? '').trim(),
+      };
 
-    setScore(res);
+      setScore(res);
 
-    saveRun({
-      ts: Date.now(),
-      score: res.score,
-      vertical: scenario.vertical,
-      difficulty: scenario.difficulty,
-      product: scenario.product,
-      tone: scenario.tone,
-      persona: scenario.persona,
-    });
-    saveHistory(lines);
-  } catch (err) {
-    // 🔁 Dynamic offline fallback (varies per conversation)
-    const rep = lines.filter(l => l.who === 'you').map(l => l.text).join(' ');
-    const doc = lines.filter(l => l.who === 'doc').map(l => l.text).join(' ');
-    const repQs = (rep.match(/\?/g) || []).length;
-    const objCount = (doc.match(/price|expensive|budget|time|busy|coverage|insurance|prior\s*auth|risk|not\s*interested|send\s+info/gi) || []).length;
+      saveRun({
+        ts: Date.now(),
+        score: res.score,
+        vertical: scenario.vertical,
+        difficulty: scenario.difficulty,
+        product: scenario.product,
+        tone: scenario.tone,
+        persona: scenario.persona,
+      });
+      saveHistory(lines);
+    } catch (err) {
+      const rep = lines.filter(l => l.who === 'you').map(l => l.text).join(' ');
+      const doc = lines.filter(l => l.who === 'doc').map(l => l.text).join(' ');
+      const repQs = (rep.match(/\?/g) || []).length;
+      const objCount = (doc.match(/price|expensive|budget|time|busy|coverage|insurance|prior\s*auth|risk|not\s*interested|send\s+info/gi) || []).length;
 
-    let s = 5;
-    s += Math.min(repQs * 0.35, 2);               // discovery
-    s -= Math.min(objCount * 0.4, 1.2);           // objection tax
-    s += (Math.random() - 0.5) * 0.5;             // small jitter
-    s = Math.max(0, Math.min(10, s));
-    s = Math.round(s * 10) / 10;                  // 0.1 precision
+      let s = 5;
+      s += Math.min(repQs * 0.35, 2);
+      s -= Math.min(objCount * 0.4, 1.2);
+      s += (Math.random() - 0.5) * 0.5;
+      s = Math.max(0, Math.min(10, s));
+      s = Math.round(s * 10) / 10;
 
-    setScore({
-      score: s,
-      wentWell: repQs >= 2
-        ? 'Strong discovery and natural flow.'
-        : 'Good rapport; add 1–2 sharper discovery questions.',
-      improve: objCount > 0
-        ? 'Tighten objection handling with one-sentence answers.'
-        : 'Translate features into outcomes tied to the persona.',
-      next: 'Propose a crisp next step and a concrete time.',
-    });
+      setScore({
+        score: s,
+        wentWell: repQs >= 2
+          ? 'Strong discovery and natural flow.'
+          : 'Good rapport; add 1–2 sharper discovery questions.',
+        improve: objCount > 0
+          ? 'Tighten objection handling with one-sentence answers.'
+          : 'Translate features into outcomes tied to the persona.',
+        next: 'Propose a crisp next step and a concrete time.',
+      });
 
-    saveRun({
-      ts: Date.now(),
-      score: s,
-      vertical: scenario.vertical,
-      difficulty: scenario.difficulty,
-      product: scenario.product,
-      tone: scenario.tone,
-      persona: scenario.persona,
-    });
-    saveHistory(lines);
+      saveRun({
+        ts: Date.now(),
+        score: s,
+        vertical: scenario.vertical,
+        difficulty: scenario.difficulty,
+        product: scenario.product,
+        tone: scenario.tone,
+        persona: scenario.persona,
+      });
+      saveHistory(lines);
+    }
   }
-}
+
   /* ---- Sending user input ---- */
   function pushYou(text: string) {
     setMessages(prev => [...prev, { who: 'you', text }]);
   }
 
-async function respondFromDoc(lines: Line[]) {
-  // 1) Ask your simulator as usual
-  let raw = await fetchSimReply(lines);
+  async function respondFromDoc(lines: Line[]) {
+    let raw = await fetchSimReply(lines);
+    raw = sanitizeForVertical(scenario.vertical, raw);
 
-  // 2) Guard: remove non-pharma insurance talk
-  raw = sanitizeForVertical(scenario.vertical, raw);
+    const lastDoc = [...lines].reverse().find(l => l.who === 'doc')?.text || '';
+    if (lastDoc && lastDoc.trim().toLowerCase() === raw.trim().toLowerCase()) {
+      raw = "Makes sense—what would you need from me to get this started?";
+    }
 
-  // 3) Tiny anti-repeat only (no templated closes)
-  const lastDoc = [...lines].reverse().find(l => l.who === 'doc')?.text || '';
-  if (lastDoc && lastDoc.trim().toLowerCase() === raw.trim().toLowerCase()) {
-    raw = "Makes sense—what would you need from me to get this started?";
+    setMessages(prev => [...prev, { who: 'doc', text: raw }]);
+    if (view === 'avatar') speakAndResume(raw);
   }
 
-  // 4) Commit reply and speak if Avatar view
-  setMessages(prev => [...prev, { who: 'doc', text: raw }]);
-  if (view === 'avatar') speakAndResume(raw);
-}
   async function sendImmediate(raw: string) {
     if (ended) return;
     const text = raw.trim();
@@ -742,15 +677,12 @@ async function respondFromDoc(lines: Line[]) {
   async function onEndAndScore() {
     stopMic();
     setMicLocked(true);
-    // 1) hard-stop audio in/out
     setEnded(true);
     stopRecognition();
     window.speechSynthesis.cancel();
     setIsSpeaking(false);
     setViseme(0);
     setInterim('');
-
-    // 2) score
     await scoreNow(messages);
   }
 
@@ -763,7 +695,6 @@ async function respondFromDoc(lines: Line[]) {
     setInterim('');
     setEnded(false);
     if (!textOnly) {
-      // stay idle until user hits Start Voice again (preserving your UX)
       stopRecognition();
     }
   }
@@ -775,20 +706,22 @@ async function respondFromDoc(lines: Line[]) {
   const tintBG = difficultyTint[scenario.difficulty];
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0b1220', color: '#e5ecff' }}>
+    <div style={{ minHeight: '100vh', background: '#0b1220', color: '#e5ecff' }} className="pp-container">
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px' }}>
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-    <img
-      src="/logo.png"
-      alt="PerfectPitch Logo"
-      style={{ width: 100, height: 100, borderRadius: 15 }}
-    />
-    <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: 0.4 }}>
-      PerfectPitch 
-    </h1>
-  </div>          <div style={{ display: 'flex', gap: 12 }}>
+        <div className="pp-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <img
+              src="/logo.png"
+              alt="PerfectPitch Logo"
+              className="pp-logo"
+              style={{ width: 100, height: 100, borderRadius: 15 }}
+            />
+            <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: 0.4 }}>
+              PerfectPitch 
+            </h1>
+          </div>
+          <div style={{ display: 'flex', gap: 12 }}>
             <button
               onClick={() => setShowHL(true)}
               style={{
@@ -803,7 +736,7 @@ async function respondFromDoc(lines: Line[]) {
               History & Leaderboard
             </button>
 
-            {/* Chat / Avatar toggle (unchanged size) */}
+            {/* Chat / Avatar toggle */}
             <div
               style={{
                 background: '#0f172a',
@@ -846,6 +779,7 @@ async function respondFromDoc(lines: Line[]) {
 
         {/* Controls */}
         <div
+          className="pp-controls"
           style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(5, minmax(0,1fr))',
@@ -911,38 +845,37 @@ async function respondFromDoc(lines: Line[]) {
           </div>
         </div>
 
-        {/* Action row (voice controls; gender toggle only on Avatar view) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+        {/* Action row */}
+        <div className="pp-actions" style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'nowrap' }}>
           <button
-  onClick={() => (listening ? stopRecognition() : startVoice())}
-  disabled={textOnly}
-  style={{
-    padding:'8px 12px',
-    borderRadius:10,
-    background: textOnly ? '#334155' : (listening ? '#ef4444' : '#22c55e'),
-    border:'1px solid rgba(255,255,255,.15)',
-    color:'#0b1220',
-    cursor: textOnly ? 'not-allowed' : 'pointer',
-    fontWeight:600,
-    opacity: textOnly ? 0.6 : 1,
-  }}
->
-  {textOnly ? 'Text Only' : (listening ? 'Stop Voice' : 'Start Voice')}
-</button>
+            onClick={() => (listening ? stopRecognition() : startVoice())}
+            disabled={textOnly}
+            style={{
+              padding:'8px 12px',
+              borderRadius:10,
+              background: textOnly ? '#334155' : (listening ? '#ef4444' : '#22c55e'),
+              border:'1px solid rgba(255,255,255,.15)',
+              color:'#0b1220',
+              cursor: textOnly ? 'not-allowed' : 'pointer',
+              fontWeight:600,
+              opacity: textOnly ? 0.6 : 1,
+            }}
+          >
+            {textOnly ? 'Text Only' : (listening ? 'Stop Voice' : 'Start Voice')}
+          </button>
 
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, opacity: 0.9 }}>
             <input type="checkbox" checked={handsFree} onChange={e => setHandsFree(e.target.checked)} disabled={ended || textOnly} />
             Hands-free (auto-send)
           </label>
 
-          {/* NEW: Text-Only toggle */}
           <label style={{ display:'inline-flex', alignItems:'center', gap:8, fontSize:14, opacity:0.9 }}>
-  <input
-    type="checkbox"
-    checked={textOnly}
-    onChange={e => setTextOnly(e.target.checked)}
-  />
-  Text Only (no mic)
+            <input
+              type="checkbox"
+              checked={textOnly}
+              onChange={e => setTextOnly(e.target.checked)}
+            />
+            Text Only (no mic)
           </label>
 
           {view === 'avatar' && (
@@ -989,6 +922,7 @@ async function respondFromDoc(lines: Line[]) {
 
         {/* Main content split */}
         <div
+          className="pp-main"
           style={{
             display: 'grid',
             gridTemplateColumns: view === 'chat' ? '1fr' : '1fr 360px',
@@ -998,6 +932,7 @@ async function respondFromDoc(lines: Line[]) {
         >
           {/* Chat card */}
           <div
+            className="pp-card"
             style={{
               background: `linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01))`,
               border: '1px solid #1f2a44',
@@ -1029,6 +964,7 @@ async function respondFromDoc(lines: Line[]) {
                   }}
                 >
                   <div
+                    className="pp-bubble"
                     style={{
                       maxWidth: '72%',
                       background: m.who === 'you' ? bubbleTint.you : bubbleTint.doc,
@@ -1055,7 +991,7 @@ async function respondFromDoc(lines: Line[]) {
             </div>
 
             {/* Input row */}
-            <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+            <div style={{ display: 'flex', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
               <input
                 value={input}
                 onChange={e => setInput(e.target.value)}
@@ -1069,6 +1005,7 @@ async function respondFromDoc(lines: Line[]) {
                 placeholder="Speak or type your next line…"
                 style={{
                   flex: 1,
+                  minWidth: 180,
                   background: '#0f172a',
                   color: '#e5ecff',
                   borderRadius: 10,
@@ -1134,25 +1071,23 @@ async function respondFromDoc(lines: Line[]) {
                   background: '#0f172a',
                 }}
               >
-                <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 8 }}>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
                   <div style={{ fontWeight: 700 }}>Score:</div>
                   <div
                     style={{
                       padding: '4px 10px',
                       borderRadius: 999,
                       background: '#22c55e22',
-                      border: '1px solid #22c55e55',
+                      border: '1px solid '#22c55e55',
                       color: '#bbf7d0',
                       fontWeight: 700,
-                    }}
+                    } as React.CSSProperties}
                   >
                     {Number(score.score).toFixed(1)} / 10
                   </div>
                 </div>
 
-                {/* Colored bullet “chips” */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 12 }}>
-                  {/* Went well (green) */}
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>What went well</div>
                     <div style={{ display: 'grid', gap: 6 }}>
@@ -1174,7 +1109,6 @@ async function respondFromDoc(lines: Line[]) {
                     </div>
                   </div>
 
-                  {/* Improvements (amber/red) */}
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Improvements</div>
                     <div style={{ display: 'grid', gap: 6 }}>
@@ -1196,7 +1130,6 @@ async function respondFromDoc(lines: Line[]) {
                     </div>
                   </div>
 
-                  {/* Next time (blue) */}
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Next time</div>
                     <div style={{ display: 'grid', gap: 6 }}>
@@ -1222,9 +1155,10 @@ async function respondFromDoc(lines: Line[]) {
             )}
           </div>
 
-          {/* Avatar card (only visible in Avatar view) */}
+          {/* Avatar card */}
           {view === 'avatar' && (
             <div
+              className="pp-card"
               style={{
                 background: `linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01))`,
                 border: '1px solid #1f2a44',
@@ -1239,6 +1173,7 @@ async function respondFromDoc(lines: Line[]) {
               <div style={{ fontSize: 13, opacity: 0.7, alignSelf: 'flex-start' }}>{label}</div>
 
               <div
+                className="pp-avatar-box"
                 style={{
                   width: 280,
                   height: 320,
@@ -1317,10 +1252,10 @@ async function respondFromDoc(lines: Line[]) {
                         alignItems: 'center',
                         gap: 10,
                         background: '#0b1220',
-                        border: '1px solid #17223b',
+                        border: '1px solid '#17223b',
                         borderRadius: 10,
                         padding: '8px 10px',
-                      }}
+                      } as React.CSSProperties}
                     >
                       <div style={{ opacity: 0.6 }}>#{i + 1}</div>
                       <div style={{ fontSize: 13 }}>
@@ -1386,6 +1321,62 @@ async function respondFromDoc(lines: Line[]) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
+
+      {/* --- Mobile tweaks only (no logic changes) --- */}
+     <style jsx global>{`
+  /* MOBILE FIXES */
+  @media (max-width: 640px) {
+    body, html {
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden; /* stop side scroll */
+      width: 100%;
+    }
+
+    .pp-header {
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 8px;
+    }
+
+    .pp-header h1 {
+      font-size: 20px !important;
+    }
+
+    .pp-logo {
+      width: 64px !important;
+      height: 64px !important;
+    }
+
+    .pp-controls {
+      grid-template-columns: 1fr !important; /* stack */
+      gap: 10px !important;
+    }
+
+    .pp-actions {
+      flex-wrap: wrap !important;
+      justify-content: center !important;
+      gap: 10px !important;
+    }
+
+    .pp-actions button,
+    .pp-actions label {
+      flex: 1 1 100%;
+      text-align: center;
+    }
+
+    .pp-main {
+      grid-template-columns: 1fr !important;
+    }
+
+    #chatScroll {
+      max-height: 60vh !important;
+    }
+
+    .pp-card {
+      padding: 12px !important;
+      border-radius: 12px !important;
+    }
+  }
+`}</style>
