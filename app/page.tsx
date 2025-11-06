@@ -1,5 +1,7 @@
 'use client';
 
+// updated mobile layout
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 type SpeechRecognition = any;
