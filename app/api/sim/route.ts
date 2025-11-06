@@ -1,10 +1,9 @@
 // app/api/sim/route.ts
 import { NextResponse } from "next/server";
 
-
-// ✅ Use Node so process.env works on Vercel
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+/** Vercel runtime hints (no behavior change) */
+export const runtime = "edge";
+export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 /* ───────────────────────── Types ───────────────────────── */
@@ -23,10 +22,10 @@ type Scenario = {
 type Line = { who: Who; text: string };
 
 type Memory = {
-  objectionCount: number;
-  topicCounts: Record<string, number>;
-  coverageAsked?: boolean;
-  coverageResolved?: boolean;
+  objectionCount: number;               // total # of doc lines that look like objections
+  topicCounts: Record<string, number>;  // counts per inferred topic
+  coverageAsked?: boolean;              // pharma: has the doc ever asked coverage/PA yet?
+  coverageResolved?: boolean;           // pharma: did rep state coverage/PA is handled?
 };
 
 /* ───────────────────────── Config ───────────────────────── */
@@ -56,6 +55,7 @@ const lastOf = (arr: Line[], who: Who) => {
 };
 
 const similar = (a: string, b: string) => norm(a) === norm(b);
+
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
 /* intents & topics */
@@ -127,7 +127,7 @@ async function llmBuyer({
     .map((m) => `${m.who === "you" ? "Rep" : "Buyer"}: ${m.text}`)
     .join("\n");
 
-  const [, maxCap] = OBJECTION_CAP[scenario.difficulty];
+  const [minCap, maxCap] = OBJECTION_CAP[scenario.difficulty];
   const tone = scenario.tone || "natural";
 
   const sys = `
@@ -139,7 +139,7 @@ Guardrails (lightweight):
 - Avoid deferral fillers such as: "let's keep going", "what's next step from your end?", "let's keep this moving", "what's next?".
 - Do not repeat a topic you've already asked and the rep has answered. If it was answered, acknowledge briefly and progress to a *new* concrete point OR accept the close if appropriate.
 - PHARMA: coverage/PA can appear once. If it's already been discussed or the rep said they handle it, do NOT bring it up again.
-- Total objections allowed for this convo: cap ${maxCap}. After that window, if the rep attempts to close, respond cooperatively in the same tone (accept or agree to start/pilot).
+- Total objections allowed for this convo: ${minCap}–${maxCap}. After that window, if the rep attempts to close, respond cooperatively in the same tone (accept or agree to start/pilot).
 
 Never repeat yourself verbatim. Keep it human, specific, and progressive.`;
 
@@ -165,10 +165,7 @@ Write ONLY your next buyer line (1–2 sentences).`;
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       cache: "no-store", // prevent any edge caching
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model: "gpt-4o-mini",
         temperature: 1.2,
@@ -203,9 +200,11 @@ function stripDeferrals(text: string) {
 function respectCoverageOnce(scn: Scenario, memory: Memory, text: string) {
   if (scn.vertical !== "pharma") return text;
   if (memory.coverageResolved && RX_COVERAGE.test(text)) {
+    // acknowledge then move forward, in a neutral human way
     return "Access sounds workable from what you’ve said—what I’d want to understand next is impact and logistics.";
   }
   if (memory.coverageAsked && RX_COVERAGE.test(text)) {
+    // already asked previously; don’t loop
     return "Got it on access—let’s shift to what patient types you’d start first.";
   }
   return text;
@@ -214,6 +213,7 @@ function respectCoverageOnce(scn: Scenario, memory: Memory, text: string) {
 function avoidRepeat(history: Line[], next: string) {
   const lastDoc = lastOf(history, "doc");
   if (similar(lastDoc, next)) {
+    // light “move forward” but not robotic
     const variants = [
       "Makes sense—let’s not rehash that. What would kickoff actually look like?",
       "I follow—let’s keep it moving. What’s the first step in practice?",
@@ -247,6 +247,7 @@ function acceptCloseIfCapReached(
   const [, cap] = OBJECTION_CAP[scn.difficulty];
   const youLast = lastOf(history, "you");
 
+  // If rep is closing AND we’ve reached (or exceeded) the cap, accept in a human way.
   if (looksLikeCloseAttempt(youLast) && memory.objectionCount >= cap) {
     if (scn.vertical === "pharma") {
       const pharmaAccept = [
@@ -267,69 +268,6 @@ function acceptCloseIfCapReached(
   return next;
 }
 
-/* ───────── Humanized acceptance (tone-matched, non-robotic) ───────── */
-function scrubRobotic(text: string) {
-  return text
-    .replace(/\b(sounds (good|great|reasonable)|let'?s keep going|that works for me|sure, i'?m open to that)\b[.,!?]?\s*/gi, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-async function llmAcceptClose({
-  scenario,
-  history,
-}: {
-  scenario: Scenario;
-  history: Line[];
-}): Promise<string> {
-  const apiKey = process.env.OPENAI_API_KEY!;
-  const recent = history.slice(-10)
-    .map(m => `${m.who === "you" ? "Rep" : "Buyer"}: ${m.text}`)
-    .join("\n");
-
-  const acceptInstruction =
-    scenario.vertical === "pharma"
-      ? `Agree to start a small, appropriate number of NEW patients this week (e.g., "I can start 1–2 appropriate patients this week").`
-      : `Agree to begin with a light, reversible first step (pilot, paperwork, or order as appropriate).`;
-
-  const sys = `
-You are the BUYER. Write ONE short, natural sentence that ACCEPTS the Rep's close.
-Match the conversation tone "${scenario.tone}" without sounding robotic.
-Do NOT use: "sounds reasonable", "let's keep going", "that works", or "sure, I'm open".
-No emojis. No sales pitch—you're the buyer.
-${acceptInstruction}
-`;
-
-  const user = `Recent conversation:\n${recent}\n\nWrite only your one-sentence acceptance now.`;
-
-  try {
-    const r = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      cache: "no-store",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 1.2,
-        max_tokens: 60,
-        messages: [
-          { role: "system", content: sys },
-          { role: "user", content: user },
-        ],
-      }),
-    });
-    const data = await r.json();
-    const raw = (data?.choices?.[0]?.message?.content ?? "").trim();
-    return scrubRobotic(raw) || "Alright—I can start small on my side.";
-  } catch {
-    return scenario.vertical === "pharma"
-      ? "Alright—I can start a couple of appropriate patients this week."
-      : "Alright—let’s kick off with a small start.";
-  }
-}
-
 /* ───────────────────────── Handler ───────────────────────── */
 export async function POST(req: Request) {
   try {
@@ -340,7 +278,9 @@ export async function POST(req: Request) {
     // Let the REP open the call (no auto-greeting)
     const anyYou = history.some((m) => m.who === "you");
     if (!anyYou) {
-      return NextResponse.json({ text: "Whenever you’re ready, I’m listening." }, { status: 200 });
+      return NextResponse.json({
+        text: "Whenever you’re ready, I’m listening.",
+      });
     }
 
     const memory = buildMemory(scenario, history);
@@ -367,7 +307,7 @@ export async function POST(req: Request) {
       next = "Let’s skip insurance talk—what I care about is whether this would actually work for me.";
     }
 
-    return NextResponse.json({ text: next }, { status: 200 });
+    return NextResponse.json({ text: next });
   } catch {
     return NextResponse.json({ text: "Sorry—could you restate that?" }, { status: 200 });
   }
