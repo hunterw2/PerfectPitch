@@ -1,10 +1,9 @@
 // app/api/sim/route.ts
-import { NextResponse } from "next/server";
-
-/** Vercel runtime hints (no behavior change) */
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+import { NextResponse } from "next/server";
 
 /* ───────────────────────── Types ───────────────────────── */
 type Who = "you" | "doc";
@@ -35,6 +34,17 @@ const OBJECTION_CAP: Record<Difficulty, [min: number, max: number]> = {
   hard:   [3, 4],
 };
 
+/** Acceptance thresholds per difficulty
+ * - easy   => accept once min cap reached
+ * - medium => accept once max cap reached
+ * - hard   => accept once max cap reached
+ */
+const ACCEPT_AT: Record<Difficulty, number> = {
+  easy:   OBJECTION_CAP.easy[1],
+  medium: OBJECTION_CAP.medium[2],
+  hard:   OBJECTION_CAP.hard[3],
+};
+
 const DEFERRALS = [
   "let's keep going",
   "let's keep this moving",
@@ -55,8 +65,6 @@ const lastOf = (arr: Line[], who: Who) => {
 };
 
 const similar = (a: string, b: string) => norm(a) === norm(b);
-
-const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 
 /* intents & topics */
 const RX_OBJECTION =
@@ -109,7 +117,7 @@ function buildMemory(scn: Scenario, history: Line[]): Memory {
   return { objectionCount, topicCounts, coverageAsked: anyCoverageAsked, coverageResolved };
 }
 
-/* ───────────────── LLM: Human conversational buyer ───────────────── */
+/* ───────────────── LLM calls ───────────────── */
 async function llmBuyer({
   scenario,
   history,
@@ -127,7 +135,7 @@ async function llmBuyer({
     .map((m) => `${m.who === "you" ? "Rep" : "Buyer"}: ${m.text}`)
     .join("\n");
 
-  const [minCap, maxCap] = OBJECTION_CAP[scenario.difficulty];
+  const [, maxCap] = OBJECTION_CAP[scenario.difficulty];
   const tone = scenario.tone || "natural";
 
   const sys = `
@@ -135,13 +143,11 @@ You are the BUYER (or HCP in pharma). Speak like a real human in 1–2 sentences
 Mirror the rep’s tone exactly: "${tone}". Use contractions and varied rhythm.
 
 Guardrails (lightweight):
-- Do NOT "sell back". You are the buyer.
-- Avoid deferral fillers such as: "let's keep going", "what's next step from your end?", "let's keep this moving", "what's next?".
-- Do not repeat a topic you've already asked and the rep has answered. If it was answered, acknowledge briefly and progress to a *new* concrete point OR accept the close if appropriate.
-- PHARMA: coverage/PA can appear once. If it's already been discussed or the rep said they handle it, do NOT bring it up again.
-- Total objections allowed for this convo: ${minCap}–${maxCap}. After that window, if the rep attempts to close, respond cooperatively in the same tone (accept or agree to start/pilot).
-
-Never repeat yourself verbatim. Keep it human, specific, and progressive.`;
+- You are the buyer (never sell back).
+- Avoid deferral fillers: "let's keep going", "what's next step from your end", etc.
+- Do not repeat a topic the rep already answered; acknowledge and progress.
+- PHARMA: coverage/PA appears at most once; if addressed, don't bring it back.
+- Total objections allowed: cap ${maxCap}. After that, if the rep attempts to close, accept or agree to start/pilot in the same tone.`;
 
   const user = `
 SCENARIO:
@@ -151,10 +157,10 @@ SCENARIO:
 - Persona: ${scenario.persona}
 
 STATE:
-- Total objections the buyer has asked so far: ${memory.objectionCount} (cap ${maxCap})
-- Buyer has already asked about coverage? ${memory.coverageAsked ? "yes" : "no"}
-- Rep indicated coverage/PA is handled? ${memory.coverageResolved ? "yes" : "no"}
-- Topic counts so far: ${JSON.stringify(memory.topicCounts)}
+- Objections so far: ${memory.objectionCount} (cap ${maxCap})
+- Asked about coverage already? ${memory.coverageAsked ? "yes" : "no"}
+- Rep said coverage/PA is handled? ${memory.coverageResolved ? "yes" : "no"}
+- Topic counts: ${JSON.stringify(memory.topicCounts)}
 
 RECENT DIALOGUE:
 ${recent}
@@ -164,7 +170,7 @@ Write ONLY your next buyer line (1–2 sentences).`;
   try {
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      cache: "no-store", // prevent any edge caching
+      cache: "no-store",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
         model: "gpt-4o-mini",
@@ -187,6 +193,72 @@ Write ONLY your next buyer line (1–2 sentences).`;
   }
 }
 
+function scrubRobotic(text: string) {
+  return text
+    .replace(/\b(sounds (good|great|reasonable)|let'?s keep going|that works for me|sure, i'?m open to that)\b[.,!?]?\s*/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function llmAcceptClose({
+  scenario,
+  history,
+}: {
+  scenario: Scenario;
+  history: Line[];
+}): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    // deterministic fallback
+    return scenario.vertical === "pharma"
+      ? "Alright—I can start a couple of appropriate patients this week."
+      : "Alright—let’s put a small kickoff on the books.";
+  }
+
+  const recent = history.slice(-10)
+    .map(m => `${m.who === "you" ? "Rep" : "Buyer"}: ${m.text}`)
+    .join("\n");
+
+  const acceptInstruction =
+    scenario.vertical === "pharma"
+      ? `Agree to start 1–2 appropriate NEW patients this week.`
+      : `Agree to a light, reversible first step (pilot, paperwork, or initial order).`;
+
+  const sys = `
+You are the BUYER. Write ONE short, natural sentence that ACCEPTS the Rep's close.
+Match the conversation tone "${scenario.tone}" without sounding robotic.
+No sales pitch. No emojis.
+${acceptInstruction}`;
+
+  const user = `Recent conversation:\n${recent}\n\nWrite only your one-sentence acceptance now.`;
+
+  try {
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 1.1,
+        max_tokens: 60,
+        messages: [
+          { role: "system", content: sys },
+          { role: "user", content: user },
+        ],
+      }),
+    });
+    const data = await r.json();
+    const raw = (data?.choices?.[0]?.message?.content ?? "").trim();
+    return scrubRobotic(raw) || (scenario.vertical === "pharma"
+      ? "Alright—I can start a couple of appropriate patients this week."
+      : "Alright—let’s put a small kickoff on the books.");
+  } catch {
+    return scenario.vertical === "pharma"
+      ? "Alright—I can start a couple of appropriate patients this week."
+      : "Alright—let’s put a small kickoff on the books.";
+  }
+}
+
 /* ─────────── Post-processing: keep it human & non-loopy ─────────── */
 function stripDeferrals(text: string) {
   let out = text.trim();
@@ -200,11 +272,9 @@ function stripDeferrals(text: string) {
 function respectCoverageOnce(scn: Scenario, memory: Memory, text: string) {
   if (scn.vertical !== "pharma") return text;
   if (memory.coverageResolved && RX_COVERAGE.test(text)) {
-    // acknowledge then move forward, in a neutral human way
     return "Access sounds workable from what you’ve said—what I’d want to understand next is impact and logistics.";
   }
   if (memory.coverageAsked && RX_COVERAGE.test(text)) {
-    // already asked previously; don’t loop
     return "Got it on access—let’s shift to what patient types you’d start first.";
   }
   return text;
@@ -213,7 +283,6 @@ function respectCoverageOnce(scn: Scenario, memory: Memory, text: string) {
 function avoidRepeat(history: Line[], next: string) {
   const lastDoc = lastOf(history, "doc");
   if (similar(lastDoc, next)) {
-    // light “move forward” but not robotic
     const variants = [
       "Makes sense—let’s not rehash that. What would kickoff actually look like?",
       "I follow—let’s keep it moving. What’s the first step in practice?",
@@ -238,34 +307,44 @@ function moveOnAfterRepeatedTopic(history: Line[], memory: Memory, next: string)
   return next;
 }
 
-function acceptCloseIfCapReached(
+/** NEW: strict cap enforcer to stop loops and accept closes */
+async function enforceCapRules(
   scn: Scenario,
   history: Line[],
   memory: Memory,
-  next: string
-) {
-  const [, cap] = OBJECTION_CAP[scn.difficulty];
+  proposed: string
+): Promise<string> {
   const youLast = lastOf(history, "you");
+  const maxCap = OBJECTION_CAP[scn.difficulty][1];
+  const acceptAt = ACCEPT_AT[scn.difficulty];
 
-  // If rep is closing AND we’ve reached (or exceeded) the cap, accept in a human way.
-  if (looksLikeCloseAttempt(youLast) && memory.objectionCount >= cap) {
-    if (scn.vertical === "pharma") {
-      const pharmaAccept = [
-        "That works—let’s start a patient this week and see how they do.",
-        "Alright, I’m comfortable starting one—let’s pick a candidate and I’ll watch closely.",
-        "Sounds good. I’ll try a patient and we can regroup on what we see.",
-      ];
-      return pharmaAccept[Math.floor(Math.random() * pharmaAccept.length)];
-    } else {
-      const accept = [
-        "I’m good with that—let’s get the paperwork started.",
-        "Alright, I’m in. What do you need from me to kick off?",
-        "Works for me—let’s put the first step on the books.",
-      ];
-      return accept[Math.floor(Math.random() * accept.length)];
-    }
+  const isClose = looksLikeCloseAttempt(youLast);
+  const overAccept = memory.objectionCount >= acceptAt;
+  const atOrOverMax = memory.objectionCount >= maxCap;
+
+  // If rep is closing and we've hit the acceptance threshold for this difficulty → ACCEPT.
+  if (isClose && overAccept) {
+    return await llmAcceptClose({ scenario: scn, history });
   }
-  return next;
+
+  // If we've already hit or exceeded the MAX cap and the proposed text is another objection,
+  // pivot to cooperation instead of looping another objection.
+  if (atOrOverMax && looksLikeObjection(proposed)) {
+    const coop = scn.vertical === "pharma"
+      ? [
+          "Okay—that gives me enough. I can start 1–2 appropriate patients and we’ll see how they respond.",
+          "That’s fine. I’ll try a patient this week and we can regroup on what we notice.",
+          "Good enough for me to begin—let’s start with a couple of appropriate patients.",
+        ]
+      : [
+          "Alright, that’s enough for me—let’s get a small kickoff on the books.",
+          "Okay, I’m good to start. What do you need from me for a light kickoff?",
+          "Let’s put the first step on the calendar and go from there.",
+        ];
+    return coop[Math.floor(Math.random() * coop.length)];
+  }
+
+  return proposed;
 }
 
 /* ───────────────────────── Handler ───────────────────────── */
@@ -285,24 +364,26 @@ export async function POST(req: Request) {
 
     const memory = buildMemory(scenario, history);
 
-    // 1) Let the LLM write a natural buyer line
+    // Ask LLM for next buyer line
     let next =
       (await llmBuyer({ scenario, history, memory })) ||
       "Could you say that one more way?";
 
-    // 2) Gentle rails that keep it human (no “robotic” lines, no loops)
+    // Gentle rails to keep it human and non-loopy
     next = stripDeferrals(next);
     next = respectCoverageOnce(scenario, memory, next);
     next = moveOnAfterRepeatedTopic(history, memory, next);
     next = avoidRepeat(history, next);
-    next = acceptCloseIfCapReached(scenario, history, memory, next);
 
-    // 3) Never sell back
+    // HARD STOP: enforce caps & accept closes (prevents looping on close)
+    next = await enforceCapRules(scenario, history, memory, next);
+
+    // Never sell back
     if (/^\s*(let me|i can get you set up|i'?ll send you a quote|here's why you should)\b/i.test(next)) {
       next = "I’m the buyer here—help me understand what I’ll actually notice first.";
     }
 
-    // 4) For non-pharma, never inject insurance language
+    // For non-pharma, never inject insurance language
     if (scenario.vertical !== "pharma" && RX_COVERAGE.test(next)) {
       next = "Let’s skip insurance talk—what I care about is whether this would actually work for me.";
     }
