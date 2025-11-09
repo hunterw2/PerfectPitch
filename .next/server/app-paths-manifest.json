@@ -1,3 +1,4 @@
 {
+  "/api/sim/route": "app/api/sim/route.js",
   "/page": "app/page.js"
 }

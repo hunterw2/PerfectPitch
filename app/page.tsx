@@ -807,13 +807,9 @@ async function respondFromDoc(lines: Line[]) {
     setInterim('');
 
     // 2) score
-   await scoreNow(messages);
-try {
-  track('session_completed', {
-    vertical: scenario.vertical,
-    difficulty: scenario.difficulty,
-  });
-} catch {}
+    await scoreNow(messages);
+  }
+
   function onStartNew() {
     setMicLocked(false);
     startMicIfAllowed();
