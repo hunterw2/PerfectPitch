@@ -40,9 +40,9 @@ const OBJECTION_CAP: Record<Difficulty, [min: number, max: number]> = {
  * - hard   => accept once max cap reached
  */
 const ACCEPT_AT: Record<Difficulty, number> = {
-  easy:   OBJECTION_CAP.easy[1],
-  medium: OBJECTION_CAP.medium[2],
-  hard:   OBJECTION_CAP.hard[3],
+  easy:   OBJECTION_CAP.easy[0],
+  medium: OBJECTION_CAP.medium[1],
+  hard:   OBJECTION_CAP.hard[1],
 };
 
 const DEFERRALS = [
