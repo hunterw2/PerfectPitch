@@ -72,6 +72,34 @@ const RX_OBJECTION =
 
 const RX_CLOSE =
   /\b(ready|let'?s (proceed|start|try|kick ?off|book|schedule|do it|move forward)|place (an )?order|sign|contract|go ahead|let'?s do (this|it)|next step|paperwork|pilot|trial|are you ready|can you sign|let's make it official)\b/i;
+// Detects if text ends in a question mark
+const isQuestion = (s: string) => /\?\s*$/.test((s || '').trim());
+
+// Smarter close detector that allows natural closing questions
+function isTrueClose(text: string) {
+  const lower = text.toLowerCase().trim();
+
+  // Phrases that count as real closes — even if phrased as a question
+  const closingIntents = [
+    "will you try",
+    "can we start",
+    "ready to move forward",
+    "ready to begin",
+    "shall we move forward",
+    "are you ready to",
+    "can you sign",
+    "will you start",
+    "will you give it a try",
+    "can we get going",
+    "can we make this official",
+  ];
+
+  // If it contains one of those key phrases, count it as a close
+  if (closingIntents.some(p => lower.includes(p))) return true;
+
+  // Otherwise only count as close if it matches RX_CLOSE and is not just a generic question
+  return looksLikeCloseAttempt(text) && !isQuestion(text);
+}
 
 const RX_COVERAGE = /\b(coverage|prior ?auth|authorization|copay|payer|formulary)\b/i;
 
@@ -293,20 +321,45 @@ function avoidRepeat(history: Line[], next: string) {
   return next;
 }
 
-function moveOnAfterRepeatedTopic(history: Line[], memory: Memory, next: string) {
+function moveOnAfterRepeatedTopic(history: Line[], memory: Memory, next: string, tone?: string) {
   const topic = inferTopic(next);
   const count = memory.topicCounts[topic] ?? 0;
+
   if (count >= 2 && looksLikeObjection(next)) {
-    const variants = [
+    const t = (tone || "").toLowerCase();
+
+    // tone-matched responses
+    const toneVariants: Record<string, string[]> = {
+      flirty: [
+        "Alright, I’m convinced—how about we take the first little step?",
+        "Okay, I’m satisfied—what’s our next move, charm?",
+        "Got it, sugar—what’s the first step you’d have me take?",
+      ],
+      friendly: [
+        "Sounds good to me—what do you think makes sense as a next step?",
+        "Alright, fair enough—how would you like to start?",
+        "Cool, that clears it up—what would you suggest we do first?",
+      ],
+      professional: [
+        "Understood—what would you recommend as our first actionable step?",
+        "Alright, that addresses my concern. What do you see as the logical next step?",
+        "That helps clarify things—what would you suggest we do next?",
+      ],
+    };
+
+    // fallback pool (if tone not matched)
+    const defaultVariants = [
       "Alright, I’m satisfied on that point—what would you suggest as a first step?",
       "Okay, that helps—let’s talk about getting started.",
       "Got it—why don’t we move toward a small start and go from there?",
     ];
-    return variants[Math.floor(Math.random() * variants.length)];
+
+    const pool = toneVariants[t] ?? defaultVariants;
+    return pool[Math.floor(Math.random() * pool.length)];
   }
+
   return next;
 }
-
 /** NEW: strict cap enforcer to stop loops and accept closes */
 async function enforceCapRules(
   scn: Scenario,
@@ -318,7 +371,7 @@ async function enforceCapRules(
   const maxCap = OBJECTION_CAP[scn.difficulty][1];
   const acceptAt = ACCEPT_AT[scn.difficulty];
 
-  const isClose = looksLikeCloseAttempt(youLast);
+  const isClose = isTrueClose(youLast);
   const overAccept = memory.objectionCount >= acceptAt;
   const atOrOverMax = memory.objectionCount >= maxCap;
 
@@ -372,7 +425,7 @@ export async function POST(req: Request) {
     // Gentle rails to keep it human and non-loopy
     next = stripDeferrals(next);
     next = respectCoverageOnce(scenario, memory, next);
-    next = moveOnAfterRepeatedTopic(history, memory, next);
+    next = moveOnAfterRepeatedTopic(history, memory, next, scenario.tone);
     next = avoidRepeat(history, next);
 
     // HARD STOP: enforce caps & accept closes (prevents looping on close)

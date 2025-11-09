@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-
+import { track } from '@vercel/analytics'; // put at top of your page.tsx
 type SpeechRecognition = any;
 
 declare global {
@@ -413,6 +413,8 @@ function startMicIfAllowed() {
 
   /* History & Leaderboard (right drawer) */
   const [showHL, setShowHL] = useState(false);
+  const [lbFilter, setLbFilter] = useState<Difficulty | 'all'>('all');
+  const [lbRows, setLbRows] = useState<any[]>([]);
   const runs = loadRuns();
   const leaderboard = useMemo(
     () => runs.slice().sort((a, b) => b.score - a.score).slice(0, 10),
@@ -460,6 +462,9 @@ function startMicIfAllowed() {
     return () => clearInterval(t);
   }, []);
 
+useEffect(() => {
+  if (showHL) fetchTop(lbFilter);
+}, [showHL, lbFilter]);
 useEffect(() => {
   const onVoices = () => setVoicesReady(true);
   try {
@@ -625,6 +630,37 @@ useEffect(() => {
     return reply;
   }
 
+async function fetchTop(d: Difficulty | 'all') {
+  try {
+    const qs = d === 'all' ? '' : `?difficulty=${encodeURIComponent(d)}`;
+    const r = await fetch(`/api/scores/top${qs}`, { cache: 'no-store' });
+    const j = await r.json();
+    setLbRows(Array.isArray(j.rows) ? j.rows : []);
+  } catch {
+    setLbRows([]);
+  }
+}
+async function saveScoreToCloud(payload: {
+  initials?: string;
+  score: number;
+  vertical: Vertical;
+  difficulty: Difficulty;
+  product: string;
+  tone: string;
+  persona: string;
+}) {
+  try {
+    await fetch('/api/scores/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    // fail silently; local still works
+  }
+}
+
  async function scoreNow(lines: Line[]) {
   try {
     const resp = await fetch('/api/score', {
@@ -656,6 +692,26 @@ useEffect(() => {
 
     setScore(res);
 
+// Ask for initials once per session (simple UX for now)
+let initials = (localStorage.getItem('pp_initials') || '').toUpperCase().slice(0,3);
+if (!initials) {
+  initials = (prompt('Enter your initials (3 letters) for the leaderboard:') || '')
+               .toUpperCase()
+               .replace(/[^A-Z]/g,'')
+               .slice(0,3);
+  if (initials) localStorage.setItem('pp_initials', initials);
+}
+
+// fire-and-forget cloud save
+saveScoreToCloud({
+  initials,
+  score: res.score,
+  vertical: scenario.vertical,
+  difficulty: scenario.difficulty,
+  product: scenario.product,
+  tone: scenario.tone,
+  persona: scenario.persona,
+});
     saveRun({
       ts: Date.now(),
       score: res.score,
@@ -751,9 +807,13 @@ async function respondFromDoc(lines: Line[]) {
     setInterim('');
 
     // 2) score
-    await scoreNow(messages);
-  }
-
+   await scoreNow(messages);
+try {
+  track('session_completed', {
+    vertical: scenario.vertical,
+    difficulty: scenario.difficulty,
+  });
+} catch {}
   function onStartNew() {
     setMicLocked(false);
     startMicIfAllowed();
