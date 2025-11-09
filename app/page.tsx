@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { track } from '@vercel/analytics'; // put at top of your page.tsx
+import { track } from '@vercel/analytics/react'; // put at top of your page.tsx
+
 type SpeechRecognition = any;
 
 declare global {
