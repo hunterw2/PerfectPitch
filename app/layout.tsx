@@ -1,19 +1,36 @@
 // app/layout.tsx
 import './globals.css';
-import { Analytics } from '@vercel/analytics/react';   // ⬅️ add this
-import type {Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
+// If you already installed @vercel/analytics, uncomment the next line:
+// import { Analytics } from '@vercel/analytics/react';
 
-export const metadata; Metadata = {
-  title: 'Perfect Pitch'
-  description: 'AI Sales Roleplay Simulator',
+export const metadata: Metadata = {
+  title: 'PerfectPitch',
+  description: 'Sales roleplay simulator',
+  themeColor: '#0b1220',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+  },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover', // iPhone notch / safe areas
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        {/* prevents input zoom + odd phone parsing */}
+        <meta name="format-detection" content="telephone=no" />
+      </head>
       <body>
         {children}
-        <Analytics />   {/* ⬅️ add this right before </body> */}
+        {/* If using Vercel Analytics, uncomment: */}
+        {/* <Analytics /> */}
       </body>
     </html>
   );

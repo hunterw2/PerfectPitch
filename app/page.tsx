@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { track } from '@vercel/analytics/react'; // put at top of your page.tsx
+import { ensureAudioUnlocked, speakText } from '../lib/mobileVoice';
 
 type SpeechRecognition = any;
 
@@ -10,6 +11,7 @@ declare global {
     SpeechRecognition?: any;
     webkitSpeechRecognition?: any;
     mozSpeechRecognition?: any;
+    recognition?: any;
   }
 }
 
@@ -70,7 +72,6 @@ const roleLabel = (v: Vertical) => (v === 'pharma' ? 'Provider' : 'Prospect');
 ========================= */
 function bulletify(s: string): string[] {
   if (!s) return [];
-  // Split on newlines, bullets, or sentence breaks; keep it simple and robust
   const parts = s
     .split(/\n|•|-\s|;\s|\. (?=[A-Z(])/g)
     .map(t => t.trim().replace(/^[•-\s]+/, ''))
@@ -249,7 +250,7 @@ function pickVoice(tone: string, gender: Gender) {
 }
 
 function getRecognition(): SpeechRecognition | null {
-  if (typeof window === 'undefined') return null; // <-- SSR guard (no runtime change)
+  if (typeof window === 'undefined') return null; // SSR guard
   const w = window as any;
   const SR = w.SpeechRecognition || w.webkitSpeechRecognition || w.mozSpeechRecognition;
   if (!SR) return null;
@@ -279,16 +280,13 @@ const OBJECTION_LIMIT: Record<Difficulty, number> = { easy: 2, medium: 3, hard: 
 
 function classifyObjection(text: string): ObjectionKey | null {
   const t = text.toLowerCase();
-
   if (/(too\s*(expensive|price|cost)|budget|afford)/.test(t)) return 'price';
   if (/(no\s*time|busy|not\s*a\s*good\s*time|call\s*back)/.test(t)) return 'time';
   if (/(not\s*interested|don’t\s*need|do\s*not\s*need)/.test(t)) return 'notInterested';
   if (/(send|email)\s+(me|over)\s+(info|information|details|deck)/.test(t)) return 'sendInfo';
-  if (/(need|have)\s+to\s+(ask|check|run\s+by)\s+(my\s+boss|manager|partner|spouse|team|procurement)/.test(t))
-    return 'authority';
+  if (/(need|have)\s+to\s+(ask|check|run\s+by)\s+(my\s+boss|manager|partner|spouse|team|procurement)/.test(t)) return 'authority';
   if (/(does(n’t| not)\s*fit|fit\s*my\s*lifestyle|workflow|process|use\s*case)/.test(t)) return 'lifestyle';
-  if (/(hard\s*evidence|proof|case\s*study|real\s*world\s*(study|evidence)|peer\s*review)/.test(t))
-    return 'evidence';
+  if (/(hard\s*evidence|proof|case\s*study|real\s*world\s*(study|evidence)|peer\s*review)/.test(t)) return 'evidence';
   if (/(already\s*(use|have)|current\s*(vendor|provider)|working\s*with)/.test(t)) return 'competition';
   if (/(bad\s*time|circle\s*back\s*later|quarter\s*end|budget\s*cycle)/.test(t)) return 'timing';
   if (/(risk|concern|wary|skeptic)/.test(t)) return 'risk';
@@ -296,10 +294,8 @@ function classifyObjection(text: string): ObjectionKey | null {
 }
 
 function analyzeObjections(lines: Line[]) {
-  // Count unique objections by the prospect (doc) and repetitions by category
   const counts = new Map<ObjectionKey, number>();
   const order: ObjectionKey[] = [];
-
   for (const l of lines) {
     if (l.who !== 'doc') continue;
     const k = classifyObjection(l.text);
@@ -307,11 +303,9 @@ function analyzeObjections(lines: Line[]) {
     counts.set(k, (counts.get(k) ?? 0) + 1);
     if (!order.includes(k)) order.push(k);
   }
-
   const totalUnique = order.length;
   const lastCategory = order.length ? order[order.length - 1] : null;
   const lastCount = lastCategory ? counts.get(lastCategory) ?? 0 : 0;
-
   return { counts, totalUnique, lastCategory, lastCount };
 }
 
@@ -321,26 +315,19 @@ function shouldMoveOn(
 ): { acceptAndClose: boolean; acceptThisOne: boolean } {
   const { totalUnique, lastCategory, lastCount } = analyzeObjections(lines);
   const limit = OBJECTION_LIMIT[scenario.difficulty];
-
-  // If we already hit the unique-objection cap for the difficulty, time to move on.
   if (totalUnique >= limit) return { acceptAndClose: true, acceptThisOne: true };
-
-  // If the current category has been brought up twice, accept and progress.
   if (lastCategory && lastCount >= 2) return { acceptAndClose: false, acceptThisOne: true };
-
   return { acceptAndClose: false, acceptThisOne: false };
 }
 
 function sanitizeForVertical(vertical: Vertical, reply: string) {
   if (vertical !== 'pharma') {
-    // strip/soften insurance/coverage talk for non-pharma
     reply = reply.replace(/\b(insurance|coverage|copay|prior authorization)\b/gi, 'options');
   }
   return reply;
 }
 
 function acceptanceLine(category: ObjectionKey | null) {
-  // Brief “accept + transition” lines after 2 rounds on the same objection
   const map: Partial<Record<ObjectionKey, string>> = {
     price:
       "Totally fair—let’s structure it so the cost lines up with the value you’ll see. If that’s reasonable, the next step is a quick kickoff.",
@@ -370,6 +357,18 @@ function closingNudge() {
   return "If that works, let’s pick a quick time to kick off—what does early next week look like?";
 }
 
+function useIsMobile(breakpoint = 480) {
+  const [isMobile, setIsMobile] = React.useState(false);
+  React.useEffect(() => {
+    const check = () =>
+      setIsMobile(window.matchMedia(`(max-width:${breakpoint}px)`).matches);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 /* =========================
    Page
 ========================= */
@@ -383,6 +382,8 @@ export default function Page() {
     persona: 'Homeowner, cost-conscious but open to value',
   });
 
+  const isMobile = useIsMobile(); // <= true on iPhones / small screens
+
   const [view, setView] = useState<View>('chat');
   const [gender, setGender] = useState<Gender>('male');
 
@@ -391,23 +392,22 @@ export default function Page() {
   const [input, setInput] = useState('');
   const [interim, setInterim] = useState('');
 
-  // === Mic Lock State and Helper Functions ===
-const [micLocked, setMicLocked] = useState(false); // mic locked after End & Score
+  // NEW toggles/flags
+  const [textOnly, setTextOnly] = useState(false);
+  const [micLocked, setMicLocked] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [handsFree, setHandsFree] = useState(true);
+  const recRef = useRef<SpeechRecognition | null>(null);
+  const ttsSpeakingRef = useRef(false);
 
-function stopMic() {
-  try {
-    (window as any).recognition?.stop?.();
-  } catch {}
-}
+  // Avatar anim state
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [viseme, setViseme] = useState(0);
+  const [blink, setBlink] = useState(false);
 
-function startMicIfAllowed() {
-  // only start if not Text Only and not locked
-  if (!textOnly && !micLocked) {
-    try {
-      (window as any).recognition?.start?.();
-    } catch {}
-  }
-}
+  // Session state
+  const [ended, setEnded] = useState(false);
+  const [voicesReady, setVoicesReady] = useState(false);
 
   /* Scoring */
   const [score, setScore] = useState<ScoreResult | null>(null);
@@ -422,23 +422,11 @@ function startMicIfAllowed() {
     [runs.length]
   );
 
-  /* Voice refs */
-  const recRef = useRef<SpeechRecognition | null>(null);
-  const ttsSpeakingRef = useRef(false);
-  const [listening, setListening] = useState(false);
-  const [handsFree, setHandsFree] = useState(true);
-
-  /* NEW: Text-only mode */
-  const [textOnly, setTextOnly] = useState(false);
-
-  /* NEW: lip-sync + blink state */
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [viseme, setViseme] = useState(0);
-  const [blink, setBlink] = useState(false);
-
-  /* NEW: Ended state (End & Score should *end* the call) */
-  const [ended, setEnded] = useState(false);
-  const [voicesReady, setVoicesReady] = useState(false);
+  /* Mount effects */
+  useEffect(() => {
+    ensureAudioUnlocked();
+    try { window.speechSynthesis.getVoices(); } catch {}
+  }, []);
 
   /* Keep bubbles tidy */
   useEffect(() => {
@@ -446,13 +434,14 @@ function startMicIfAllowed() {
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [messages.length]);
 
+  /* Text-only guard */
   useEffect(() => {
-  if (textOnly) {
-    stopRecognition();        // hard stop the mic
-    setListening(false);      // UI state
-    setHandsFree(false);      // avoid auto-send voice flow
-  }
-}, [textOnly]);
+    if (textOnly) {
+      stopRecognition();
+      setListening(false);
+      setHandsFree(false);
+    }
+  }, [textOnly]);
 
   /* Blink timer */
   useEffect(() => {
@@ -463,27 +452,23 @@ function startMicIfAllowed() {
     return () => clearInterval(t);
   }, []);
 
-useEffect(() => {
-  if (showHL) fetchTop(lbFilter);
-}, [showHL, lbFilter]);
-useEffect(() => {
-  const onVoices = () => setVoicesReady(true);
-  try {
-    window.speechSynthesis.addEventListener?.('voiceschanged', onVoices);
-  } catch {}
-  // Safari may not fire voiceschanged — nudge once
-  const t = setTimeout(() => setVoicesReady(true), 400);
-  return () => {
-    clearTimeout(t);
-    try {
-      window.speechSynthesis.removeEventListener?.('voiceschanged', onVoices);
-    } catch {}
-  };
-}, []);
+  /* Leaderboard fetch */
+  useEffect(() => { if (showHL) fetchTop(lbFilter); }, [showHL, lbFilter]);
+
+  /* Voices ready */
+  useEffect(() => {
+    const onVoices = () => setVoicesReady(true);
+    try { window.speechSynthesis.addEventListener?.('voiceschanged', onVoices); } catch {}
+    const t = setTimeout(() => setVoicesReady(true), 400);
+    return () => {
+      clearTimeout(t);
+      try { window.speechSynthesis.removeEventListener?.('voiceschanged', onVoices); } catch {}
+    };
+  }, []);
 
   /* Reset convo when scenario changes (except tone) */
   useEffect(() => {
-    setMessages([]); 
+    setMessages([]);
     setScore(null);
     setEnded(false);
   }, [scenario.vertical, scenario.difficulty, scenario.product, scenario.persona]);
@@ -502,38 +487,42 @@ useEffect(() => {
     setListening(false);
   }
 
+  function stopMic() {
+    try { (window as any).recognition?.stop?.(); } catch {}
+  }
+
+  function startMicIfAllowed() {
+    if (!textOnly && !micLocked) {
+      try { (window as any).recognition?.start?.(); } catch {}
+    }
+  }
+
   function startVoice() {
-    if (textOnly) return;  // 🚫 never start mic in Text Only
-    // ...rest of your existing code
-    if (ended || textOnly) return; // respect ended + text-only
-    if (ttsSpeakingRef.current) return; // wait until TTS ends
+    if (ended || textOnly) return;
+    if (ttsSpeakingRef.current) return;
     const rec = getRecognition();
     if (!rec) {
       alert('Speech Recognition not supported in this browser. Try Chrome on desktop.');
       return;
     }
     recRef.current = rec;
+    (window as any).recognition = rec; // <-- wire for stopMic/startMicIfAllowed
     setListening(true);
     setInterim('');
 
-    // Grace period: don’t auto-send on tiny pauses
     let partialBuffer = '';
     let sendTimer: number | ReturnType<typeof setTimeout> | null = null;
 
     (rec as any).onresult = (e: any) => {
       for (let i = e.resultIndex; i < e.results.length; i++) {
-       if (textOnly) return; //ignore speech results in Text Only
+        if (textOnly) return; // ignore in Text Only
         const r = e.results[i];
         const txt = r[0].transcript;
         if (r.isFinal) {
           partialBuffer = (partialBuffer + ' ' + txt).trim();
           setInterim('');
           if (handsFree) {
-            if (sendTimer) {
-               clearTimeout(sendTimer);
-	       sendTimer = null;
-              }
-            // 900ms grace period so brief pauses don’t fire mid-sentence
+            if (sendTimer) { clearTimeout(sendTimer); sendTimer = null; }
             sendTimer = window.setTimeout(() => {
               const toSend = partialBuffer.trim();
               partialBuffer = '';
@@ -547,36 +536,24 @@ useEffect(() => {
         }
       }
     };
-
-    (rec as any).onend = () => {
-      setListening(false);
-    };
-
+    (rec as any).onend = () => setListening(false);
     (rec as any).onerror = () => setListening(false);
-
-    try {
-      (rec as any).start();
-    } catch {
-      // ignore
-    }
+    try { (rec as any).start(); } catch {}
   }
 
   /* Natural-ish TTS with viseme pulses */
   function speakAndResume(text: string) {
-  if (!text || ended || textOnly) return;
+    if (!text || ended || textOnly) return;
 
-  // ✅ HARD STOP any live recognition before speaking to prevent self-hearing
-  stopRecognition();
-  setListening(false);
+    // stop any live recognition before speaking
+    stopRecognition();
+    setListening(false);
 
-  if (!voicesReady) {
-    setTimeout(() => speakAndResume(text), 120);
-    return;
-  }
+    if (!voicesReady) {
+      setTimeout(() => speakAndResume(text), 120);
+      return;
+    }
 
-  ttsSpeakingRef.current = true;
-
-    // Pause mic to avoid echo
     const wasListening = listening;
     if (wasListening) stopRecognition();
     ttsSpeakingRef.current = true;
@@ -591,17 +568,15 @@ useEffect(() => {
 
     u.onstart = () => { setIsSpeaking(true); setViseme(0.1); };
     u.onend = () => {
-  setIsSpeaking(false);
-  setViseme(0);
-  ttsSpeakingRef.current = false;
-
-  // ✅ Only restart mic after a small delay (avoid self-hearing echo)
-  if ((handsFree || wasListening) && !textOnly && !ended) {
-    setTimeout(() => startVoice(), 600);
-  }
-};
+      setIsSpeaking(false);
+      setViseme(0);
+      ttsSpeakingRef.current = false;
+      if ((handsFree || wasListening) && !textOnly && !ended) {
+        setTimeout(() => startVoice(), 600);
+      }
+    };
     u.onboundary = () => {
-      const amp = 0.35 + Math.random() * 0.55; // 0..1
+      const amp = 0.35 + Math.random() * 0.55;
       setViseme(amp);
       setTimeout(() => setViseme(v => v * 0.25), 90);
     };
@@ -612,7 +587,6 @@ useEffect(() => {
 
   /* ---- Network helpers to your existing API routes ---- */
   async function fetchSimReply(lines: Line[]): Promise<string> {
-    // quick guard so non-pharma never gets “coverage/insurance” replies injected by model
     const resp = await fetch('/api/sim', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -622,7 +596,6 @@ useEffect(() => {
     const data = await resp.json();
     let reply = (data.text ?? data.reply ?? 'Understood.') as string;
 
-    // Safety pass: never mention insurance unless pharma
     if (scenario.vertical !== 'pharma') {
       if (/\b(coverage|covered|insurance|payer|formulary|prior ?auth|authorization)\b/i.test(reply)) {
         reply = 'Got it—let’s stick to the essentials for now.';
@@ -631,157 +604,165 @@ useEffect(() => {
     return reply;
   }
 
-async function fetchTop(d: Difficulty | 'all') {
-  try {
-    const qs = d === 'all' ? '' : `?difficulty=${encodeURIComponent(d)}`;
-    const r = await fetch(`/api/scores/top${qs}`, { cache: 'no-store' });
-    const j = await r.json();
-    setLbRows(Array.isArray(j.rows) ? j.rows : []);
-  } catch {
-    setLbRows([]);
+  async function fetchTop(d: Difficulty | 'all') {
+    try {
+      const qs = d === 'all' ? '' : `?difficulty=${encodeURIComponent(d)}`;
+      const r = await fetch(`/api/scores/top${qs}`, { cache: 'no-store' });
+      const j = await r.json();
+      setLbRows(Array.isArray(j.rows) ? j.rows : []);
+    } catch {
+      setLbRows([]);
+    }
   }
-}
-async function saveScoreToCloud(payload: {
-  initials?: string;
-  score: number;
-  vertical: Vertical;
-  difficulty: Difficulty;
-  product: string;
-  tone: string;
-  persona: string;
-}) {
-  try {
-    await fetch('/api/scores/add', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      cache: 'no-store',
-      body: JSON.stringify(payload),
-    });
-  } catch {
-    // fail silently; local still works
+
+  async function saveScoreToCloud(payload: {
+    initials?: string;
+    score: number;
+    vertical: Vertical;
+    difficulty: Difficulty;
+    product: string;
+    tone: string;
+    persona: string;
+  }) {
+    try {
+      await fetch('/api/scores/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      // fail silently
+    }
   }
-}
 
- async function scoreNow(lines: Line[]) {
-  try {
-    const resp = await fetch('/api/score', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      cache: 'no-store',                         // <- prevent reuse
-      body: JSON.stringify({
-        scenario,
-        messages: lines,
-        transcript: lines
-          .map(l => `${l.who === 'you' ? 'Rep' : roleLabel(scenario.vertical)}: ${l.text}`)
-          .join('\n'),
-      }),
-    });
+  async function scoreNow(lines: Line[]) {
+    try {
+      const resp = await fetch('/api/score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({
+          scenario,
+          messages: lines,
+          transcript: lines
+            .map(l => `${l.who === 'you' ? 'Rep' : roleLabel(scenario.vertical)}: ${l.text}`)
+            .join('\n'),
+        }),
+      });
 
-    if (!resp.ok) throw new Error('Score API not ok');
+      if (!resp.ok) throw new Error('Score API not ok');
+      const d = await resp.json();
 
-    const d = await resp.json();
+      const scoreNum =
+        Number.isFinite(d?.score) ? Math.round(Number(d.score) * 10) / 10 : 6.5;
 
-    const scoreNum =
-      Number.isFinite(d?.score) ? Math.round(Number(d.score) * 10) / 10 : 6.5;
+      const res: ScoreResult = {
+        score: scoreNum,
+        wentWell: (d?.wentWell ?? d?.good ?? '').trim(),
+        improve: (d?.improve ?? '').trim(),
+        next: (d?.next ?? d?.nextTime ?? '').trim(),
+      };
 
-    const res: ScoreResult = {
-      score: scoreNum,
-      wentWell: (d?.wentWell ?? d?.good ?? '').trim(),
-      improve: (d?.improve ?? '').trim(),
-      next: (d?.next ?? d?.nextTime ?? '').trim(),
-    };
+      setScore(res);
 
-    setScore(res);
+      // initials (simple)
+      let initials = (localStorage.getItem('pp_initials') || '').toUpperCase().slice(0,3);
+      if (!initials) {
+        initials = (prompt('Enter your initials (3 letters) for the leaderboard:') || '')
+          .toUpperCase().replace(/[^A-Z]/g,'').slice(0,3);
+        if (initials) localStorage.setItem('pp_initials', initials);
+      }
 
-// Ask for initials once per session (simple UX for now)
-let initials = (localStorage.getItem('pp_initials') || '').toUpperCase().slice(0,3);
-if (!initials) {
-  initials = (prompt('Enter your initials (3 letters) for the leaderboard:') || '')
-               .toUpperCase()
-               .replace(/[^A-Z]/g,'')
-               .slice(0,3);
-  if (initials) localStorage.setItem('pp_initials', initials);
-}
+      // cloud save
+      saveScoreToCloud({
+        initials,
+        score: res.score,
+        vertical: scenario.vertical,
+        difficulty: scenario.difficulty,
+        product: scenario.product,
+        tone: scenario.tone,
+        persona: scenario.persona,
+      });
 
-// fire-and-forget cloud save
-saveScoreToCloud({
-  initials,
-  score: res.score,
-  vertical: scenario.vertical,
-  difficulty: scenario.difficulty,
-  product: scenario.product,
-  tone: scenario.tone,
-  persona: scenario.persona,
-});
-    saveRun({
-      ts: Date.now(),
-      score: res.score,
-      vertical: scenario.vertical,
-      difficulty: scenario.difficulty,
-      product: scenario.product,
-      tone: scenario.tone,
-      persona: scenario.persona,
-    });
-    saveHistory(lines);
-  } catch (err) {
-    // 🔁 Dynamic offline fallback (varies per conversation)
-    const rep = lines.filter(l => l.who === 'you').map(l => l.text).join(' ');
-    const doc = lines.filter(l => l.who === 'doc').map(l => l.text).join(' ');
-    const repQs = (rep.match(/\?/g) || []).length;
-    const objCount = (doc.match(/price|expensive|budget|time|busy|coverage|insurance|prior\s*auth|risk|not\s*interested|send\s+info/gi) || []).length;
+      saveRun({
+        ts: Date.now(),
+        score: res.score,
+        vertical: scenario.vertical,
+        difficulty: scenario.difficulty,
+        product: scenario.product,
+        tone: scenario.tone,
+        persona: scenario.persona,
+      });
+      saveHistory(lines);
+    } catch (err) {
+      const rep = lines.filter(l => l.who === 'you').map(l => l.text).join(' ');
+      const doc = lines.filter(l => l.who === 'doc').map(l => l.text).join(' ');
+      const repQs = (rep.match(/\?/g) || []).length;
+      const objCount = (doc.match(/price|expensive|budget|time|busy|coverage|insurance|prior\s*auth|risk|not\s*interested|send\s+info/gi) || []).length;
 
-    let s = 5;
-    s += Math.min(repQs * 0.35, 2);               // discovery
-    s -= Math.min(objCount * 0.4, 1.2);           // objection tax
-    s += (Math.random() - 0.5) * 0.5;             // small jitter
-    s = Math.max(0, Math.min(10, s));
-    s = Math.round(s * 10) / 10;                  // 0.1 precision
+      let s = 5;
+      s += Math.min(repQs * 0.35, 2);
+      s -= Math.min(objCount * 0.4, 1.2);
+      s += (Math.random() - 0.5) * 0.5;
+      s = Math.max(0, Math.min(10, s));
+      s = Math.round(s * 10) / 10;
 
-    setScore({
-      score: s,
-      wentWell: repQs >= 2
-        ? 'Strong discovery and natural flow.'
-        : 'Good rapport; add 1–2 sharper discovery questions.',
-      improve: objCount > 0
-        ? 'Tighten objection handling with one-sentence answers.'
-        : 'Translate features into outcomes tied to the persona.',
-      next: 'Propose a crisp next step and a concrete time.',
-    });
+      setScore({
+        score: s,
+        wentWell: repQs >= 2
+          ? 'Strong discovery and natural flow.'
+          : 'Good rapport; add 1–2 sharper discovery questions.',
+        improve: objCount > 0
+          ? 'Tighten objection handling with one-sentence answers.'
+          : 'Translate features into outcomes tied to the persona.',
+        next: 'Propose a crisp next step and a concrete time.',
+      });
 
-    saveRun({
-      ts: Date.now(),
-      score: s,
-      vertical: scenario.vertical,
-      difficulty: scenario.difficulty,
-      product: scenario.product,
-      tone: scenario.tone,
-      persona: scenario.persona,
-    });
-    saveHistory(lines);
+      saveRun({
+        ts: Date.now(),
+        score: s,
+        vertical: scenario.vertical,
+        difficulty: scenario.difficulty,
+        product: scenario.product,
+        tone: scenario.tone,
+        persona: scenario.persona,
+      });
+      saveHistory(lines);
+    }
   }
-}
+
   /* ---- Sending user input ---- */
   function pushYou(text: string) {
     setMessages(prev => [...prev, { who: 'you', text }]);
+    // no TTS here — we only speak the buyer/doc line
   }
 
-async function respondFromDoc(lines: Line[]) {
-  // 1) Ask your simulator as usual
-  let raw = await fetchSimReply(lines);
+  async function respondFromDoc(lines: Line[]) {
+    // 1) ask your simulator
+    let raw = await fetchSimReply(lines);
 
-  // 2) Guard: remove non-pharma insurance talk
-  raw = sanitizeForVertical(scenario.vertical, raw);
+    // 2) non-pharma guard
+    raw = sanitizeForVertical(scenario.vertical, raw);
 
-  // 3) Tiny anti-repeat only (no templated closes)
-  const lastDoc = [...lines].reverse().find(l => l.who === 'doc')?.text || '';
-  if (lastDoc && lastDoc.trim().toLowerCase() === raw.trim().toLowerCase()) {
-    raw = "Makes sense—what would you need from me to get this started?";
+    // 3) tiny anti-repeat
+    const lastDoc = [...lines].reverse().find(l => l.who === 'doc')?.text || '';
+    if (lastDoc && lastDoc.trim().toLowerCase() === raw.trim().toLowerCase()) {
+      raw = "Makes sense—what would you need from me to get this started?";
+    }
+
+    // 4) commit + speak
+    setMessages(prev => [...prev, { who: 'doc', text: raw }]);
+    if (!textOnly && view === 'avatar') {
+      if (view === 'avatar') {
+        speakAndResume(raw);
+      } else if (!textOnly) {
+        // vanilla audio (maps tone)
+        speakText(raw, { tone: scenario.tone as any });
+      }
+    }
   }
 
-  // 4) Commit reply and speak if Avatar view
-  setMessages(prev => [...prev, { who: 'doc', text: raw }]);
-  if (view === 'avatar') speakAndResume(raw);
-}
   async function sendImmediate(raw: string) {
     if (ended) return;
     const text = raw.trim();
@@ -792,35 +773,29 @@ async function respondFromDoc(lines: Line[]) {
     await respondFromDoc([...messages, { who: 'you', text }]);
   }
 
-  async function onSendClick() {
-    await sendImmediate(input);
-  }
+  async function onSendClick() { await sendImmediate(input); }
 
   async function onEndAndScore() {
     stopMic();
     setMicLocked(true);
-    // 1) hard-stop audio in/out
     setEnded(true);
     stopRecognition();
     window.speechSynthesis.cancel();
     setIsSpeaking(false);
     setViseme(0);
     setInterim('');
-
-    // 2) score
     await scoreNow(messages);
   }
 
   function onStartNew() {
     setMicLocked(false);
     startMicIfAllowed();
-    setMessages([])
+    setMessages([]);
     setScore(null);
     setInput('');
     setInterim('');
     setEnded(false);
     if (!textOnly) {
-      // stay idle until user hits Start Voice again (preserving your UX)
       stopRecognition();
     }
   }
@@ -832,20 +807,30 @@ async function respondFromDoc(lines: Line[]) {
   const tintBG = difficultyTint[scenario.difficulty];
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0b1220', color: '#e5ecff' }}>
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px' }}>
+  <div className="safe-area" style={{ minHeight: '100vh', background: '#0b1220', color: '#e5ecff' }}>
+    <div style={{
+      maxWidth: isMobile ? '100%' : 1100,
+      margin: '0 auto',
+      padding: isMobile ? '14px 12px' : '28px 20px'
+    }}>
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-    <img
-      src="/logo.png"
-      alt="PerfectPitch Logo"
-      style={{ width: 100, height: 100, borderRadius: 15 }}
-    />
-    <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: 0.4 }}>
-      PerfectPitch 
-    </h1>
-  </div>          <div style={{ display: 'flex', gap: 12 }}>
+        {/* Header */}
+<div
+  style={{
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: isMobile ? 'center' : 'space-between',
+    gap: isMobile ? 10 : 0,
+    marginBottom: 14,
+    flexDirection: isMobile ? 'column' : 'row',
+    textAlign: isMobile ? 'center' : 'left'
+  }}
+>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <img src="/logo.png" alt="PerfectPitch Logo" style={{ width: 100, height: 100, borderRadius: 15 }} />
+            <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: 0.4 }}>PerfectPitch</h1>
+          </div>
+          <div style={{ display: 'flex', gap: 12 }}>
             <button
               onClick={() => setShowHL(true)}
               style={{
@@ -860,7 +845,7 @@ async function respondFromDoc(lines: Line[]) {
               History & Leaderboard
             </button>
 
-            {/* Chat / Avatar toggle (unchanged size) */}
+            {/* Chat / Avatar toggle */}
             <div
               style={{
                 background: '#0f172a',
@@ -905,7 +890,7 @@ async function respondFromDoc(lines: Line[]) {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(5, minmax(0,1fr))',
+            gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, minmax(0,1fr))',
             gap: 12,
             marginBottom: 16,
           }}
@@ -969,37 +954,41 @@ async function respondFromDoc(lines: Line[]) {
         </div>
 
         {/* Action row (voice controls; gender toggle only on Avatar view) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <button
-  onClick={() => (listening ? stopRecognition() : startVoice())}
-  disabled={textOnly}
+        <div
   style={{
-    padding:'8px 12px',
-    borderRadius:10,
-    background: textOnly ? '#334155' : (listening ? '#ef4444' : '#22c55e'),
-    border:'1px solid rgba(255,255,255,.15)',
-    color:'#0b1220',
-    cursor: textOnly ? 'not-allowed' : 'pointer',
-    fontWeight:600,
-    opacity: textOnly ? 0.6 : 1,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+    flexWrap: isMobile ? 'wrap' : 'nowrap',
+    justifyContent: isMobile ? 'center' : 'flex-start'
   }}
 >
-  {textOnly ? 'Text Only' : (listening ? 'Stop Voice' : 'Start Voice')}
-</button>
+          <button
+            onClick={() => (listening ? stopRecognition() : startVoice())}
+            disabled={textOnly}
+            style={{
+              padding:'8px 12px',
+              borderRadius:10,
+              background: textOnly ? '#334155' : (listening ? '#ef4444' : '#22c55e'),
+              border:'1px solid rgba(255,255,255,.15)',
+              color:'#0b1220',
+              cursor: textOnly ? 'not-allowed' : 'pointer',
+              fontWeight:600,
+              opacity: textOnly ? 0.6 : 1,
+            }}
+          >
+            {textOnly ? 'Text Only' : (listening ? 'Stop Voice' : 'Start Voice')}
+          </button>
 
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, opacity: 0.9 }}>
             <input type="checkbox" checked={handsFree} onChange={e => setHandsFree(e.target.checked)} disabled={ended || textOnly} />
             Hands-free (auto-send)
           </label>
 
-          {/* NEW: Text-Only toggle */}
           <label style={{ display:'inline-flex', alignItems:'center', gap:8, fontSize:14, opacity:0.9 }}>
-  <input
-    type="checkbox"
-    checked={textOnly}
-    onChange={e => setTextOnly(e.target.checked)}
-  />
-  Text Only (no mic)
+            <input type="checkbox" checked={textOnly} onChange={e => setTextOnly(e.target.checked)} />
+            Text Only (no mic)
           </label>
 
           {view === 'avatar' && (
@@ -1048,7 +1037,7 @@ async function respondFromDoc(lines: Line[]) {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: view === 'chat' ? '1fr' : '1fr 360px',
+            gridTemplateColumns: isMobile ? '1fr' : (view === 'chat' ? '1fr' : '1fr 360px'),
             gap: 16,
             transition: 'grid-template-columns .25s ease',
           }}
@@ -1065,17 +1054,18 @@ async function respondFromDoc(lines: Line[]) {
             <div style={{ fontSize: 13, opacity: 0.7, marginBottom: 6 }}>{label}</div>
             <div
               id="chatScroll"
-              style={{
-                maxHeight: 430,
-                overflowY: 'auto',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 10,
-                padding: 8,
-                background: '#0b1220',
-                borderRadius: 14,
-                border: '1px solid #17223b',
-              }}
+             style={{
+  maxHeight: isMobile ? '48vh' : 430,
+  overflowY: 'auto',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 10,
+  padding: 8,
+  background: '#0b1220',
+  borderRadius: 14,
+  border: '1px solid #17223b',
+  WebkitOverflowScrolling: 'touch'
+}}
             >
               {messages.map((m, i) => (
                 <div
@@ -1207,9 +1197,7 @@ async function respondFromDoc(lines: Line[]) {
                   </div>
                 </div>
 
-                {/* Colored bullet “chips” */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 12 }}>
-                  {/* Went well (green) */}
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>What went well</div>
                     <div style={{ display: 'grid', gap: 6 }}>
@@ -1231,7 +1219,6 @@ async function respondFromDoc(lines: Line[]) {
                     </div>
                   </div>
 
-                  {/* Improvements (amber/red) */}
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Improvements</div>
                     <div style={{ display: 'grid', gap: 6 }}>
@@ -1253,7 +1240,6 @@ async function respondFromDoc(lines: Line[]) {
                     </div>
                   </div>
 
-                  {/* Next time (blue) */}
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Next time</div>
                     <div style={{ display: 'grid', gap: 6 }}>
@@ -1279,7 +1265,7 @@ async function respondFromDoc(lines: Line[]) {
             )}
           </div>
 
-          {/* Avatar card (only visible in Avatar view) */}
+          {/* Avatar card */}
           {view === 'avatar' && (
             <div
               style={{
@@ -1297,8 +1283,8 @@ async function respondFromDoc(lines: Line[]) {
 
               <div
                 style={{
-                  width: 280,
-                  height: 320,
+                  width: isMobile ? 220 : 280,
+                  height: isMobile ? 260 : 320,
                   borderRadius: 18,
                   background: '#0b1220',
                   border: '1px solid #17223b',
@@ -1308,11 +1294,10 @@ async function respondFromDoc(lines: Line[]) {
                   position: 'relative',
                 }}
               >
-                {gender === 'male' ? (
-                  <MaleAvatar thinking={listening && !ttsSpeakingRef.current} blink={blink} viseme={isSpeaking ? viseme : 0} />
-                ) : (
-                  <FemaleAvatar thinking={listening && !ttsSpeakingRef.current} blink={blink} viseme={isSpeaking ? viseme : 0} />
-                )}
+                {gender === 'male'
+                  ? <MaleAvatar thinking={listening && !ttsSpeakingRef.current} blink={blink} viseme={isSpeaking ? viseme : 0} />
+                  : <FemaleAvatar thinking={listening && !ttsSpeakingRef.current} blink={blink} viseme={isSpeaking ? viseme : 0} />
+                }
               </div>
 
               <div style={{ fontSize: 12, opacity: 0.7 }}>
@@ -1394,29 +1379,25 @@ async function respondFromDoc(lines: Line[]) {
               <div>
                 <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>Recent Sessions</div>
                 <div style={{ display: 'grid', gap: 8 }}>
-                  {loadHistory()
-                    .slice()
-                    .reverse()
-                    .slice(0, 8)
-                    .map((conv, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          background: '#0b1220',
-                          border: '1px solid #17223b',
-                          borderRadius: 10,
-                          padding: '8px 10px',
-                          fontSize: 13,
-                        }}
-                      >
-                        {conv.slice(0, 4).map((ln, j) => (
-                          <div key={j}>
-                            <b>{ln.who === 'you' ? 'You' : roleLabel(scenario.vertical)}:</b> {ln.text}
-                          </div>
-                        ))}
-                        {conv.length > 4 && <div style={{ opacity: 0.6 }}>…</div>}
-                      </div>
-                    ))}
+                  {loadHistory().slice().reverse().slice(0, 8).map((conv, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        background: '#0b1220',
+                        border: '1px solid #17223b',
+                        borderRadius: 10,
+                        padding: '8px 10px',
+                        fontSize: 13,
+                      }}
+                    >
+                      {conv.slice(0, 4).map((ln, j) => (
+                        <div key={j}>
+                          <b>{ln.who === 'you' ? 'You' : roleLabel(scenario.vertical)}:</b> {ln.text}
+                        </div>
+                      ))}
+                      {conv.length > 4 && <div style={{ opacity: 0.6 }}>…</div>}
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -1443,6 +1424,6 @@ async function respondFromDoc(lines: Line[]) {
           </div>
         </div>
       )}
-    </div>
+    </div>  
   );
 }
