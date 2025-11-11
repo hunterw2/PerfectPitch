@@ -947,8 +947,7 @@ export default function Page() {
               value={scenario.tone}
               onChange={e => setScenario(s => ({ ...s, tone: e.target.value }))}
               placeholder="matter-of-fact"
-              style={{
-              style={{
+             style={{
                width: '100%',
                height: 34,
  	       background: '#0f172a',
@@ -958,7 +957,9 @@ export default function Page() {
      	       border: '1px solid #273754',
                lineHeight: 1.2,
      	       appearance: 'none'
-             }}            />
+             }}
+
+            />
           </div>
 
           <div>
@@ -967,7 +968,6 @@ export default function Page() {
               value={scenario.product}
               onChange={e => setScenario(s => ({ ...s, product: e.target.value }))}
               placeholder="pen"
-              style={{
               style={{
                width: '100%',
                height: 34,
@@ -990,7 +990,6 @@ export default function Page() {
               onChange={e => setScenario(s => ({ ...s, persona: e.target.value }))}
               placeholder="Homeowner…"
               style={{
-              style={{
                width: '100%',
                height: 34,
  	       background: '#0f172a',
@@ -1001,6 +1000,7 @@ export default function Page() {
                lineHeight: 1.2,
      	       appearance: 'none'
              }}
+
             />
           </div>
         </div>
