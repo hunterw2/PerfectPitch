@@ -12,7 +12,7 @@ async function kv(cmd: any[]) {
 
 export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
+    const { searchParams } = new URL(req.url ?? '', process.env.NEXT_PUBLIC_SITE_URL || 'https://example.com');
     const difficulty = searchParams.get("difficulty") as "easy"|"medium"|"hard"|null;
     const limit = Math.min(Number(searchParams.get("limit")||10), 50);
     const key = difficulty ? `pp:scores:v1:${difficulty}` : "pp:scores:v1";
