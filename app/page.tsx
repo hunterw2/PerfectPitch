@@ -821,16 +821,16 @@ export default function Page() {
     alignItems: 'center',
     justifyContent: isMobile ? 'center' : 'space-between',
     gap: isMobile ? 10 : 0,
-    marginBottom: 14,
+    marginBottom: isMobile ? 10 : 14,
     flexDirection: isMobile ? 'column' : 'row',
     textAlign: isMobile ? 'center' : 'left'
   }}
 >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <img src="/logo.png" alt="PerfectPitch Logo" style={{ width: 100, height: 100, borderRadius: 15 }} />
-            <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: 0.4 }}>PerfectPitch</h1>
+            <img src="/logo.png" alt="PerfectPitch Logo" style={{ width: isMobile ? 64 : 100, height: isMobile ? 64 : 100, borderRadius: 15 }} />
+            <h1 style={{ fontSize: isMobile ? 22 : 28, fontWeight: 700, letterSpacing: 0.4 }}>PerfectPitch</h1>
           </div>
-          <div style={{ display: 'flex', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 12, alignSelf: isMobile ? 'stretch' : 'auto', width: isMobile ? '100%' : 'auto' }}>
             <button
               onClick={() => setShowHL(true)}
               style={{
@@ -840,6 +840,7 @@ export default function Page() {
                 border: '1px solid #22c55e55',
                 color: '#bbf7d0',
                 cursor: 'pointer',
+                width: isMobile ? '100%' : 'auto',
               }}
             >
               History & Leaderboard
@@ -854,6 +855,8 @@ export default function Page() {
                 padding: 4,
                 display: 'flex',
                 gap: 4,
+                flex: isMobile ? 1 : undefined,
+                justifyContent: isMobile ? 'space-between' : 'flex-start',
               }}
             >
               <button
@@ -890,9 +893,9 @@ export default function Page() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, minmax(0,1fr))',
-            gap: 12,
-            marginBottom: 16,
+            gridTemplateColumns: isMobile ? 'repeat(2, minmax(0,1fr))' : 'repeat(5, minmax(0,1fr))',
+            gap: isMobile ? 8 : 12,
+            marginBottom: isMobile ? 10 : 16,
           }}
         >
           <div>
@@ -958,8 +961,8 @@ export default function Page() {
   style={{
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
+    gap: isMobile ? 8 : 12,
+    marginBottom: isMobile ? 10 : 12,
     flexWrap: isMobile ? 'wrap' : 'nowrap',
     justifyContent: isMobile ? 'center' : 'flex-start'
   }}
@@ -1038,7 +1041,7 @@ export default function Page() {
           style={{
             display: 'grid',
             gridTemplateColumns: isMobile ? '1fr' : (view === 'chat' ? '1fr' : '1fr 360px'),
-            gap: 16,
+            gap: isMobile ? 10 : 16,
             transition: 'grid-template-columns .25s ease',
           }}
         >
@@ -1055,12 +1058,12 @@ export default function Page() {
             <div
               id="chatScroll"
              style={{
-  maxHeight: isMobile ? '48vh' : 430,
+  maxHeight: isMobile ? '52vh' : 430,
   overflowY: 'auto',
   display: 'flex',
   flexDirection: 'column',
-  gap: 10,
-  padding: 8,
+  gap: isMobile ? 8 : 10,
+  padding: isMobile ? 6 : 8,
   background: '#0b1220',
   borderRadius: 14,
   border: '1px solid #17223b',
@@ -1077,7 +1080,7 @@ export default function Page() {
                 >
                   <div
                     style={{
-                      maxWidth: '72%',
+                      maxWidth: isMobile ? '88%' : '72%',
                       background: m.who === 'you' ? bubbleTint.you : bubbleTint.doc,
                       color: '#eaf1ff',
                       padding: '10px 12px',
@@ -1102,7 +1105,7 @@ export default function Page() {
             </div>
 
             {/* Input row */}
-            <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+            <div style={{ display: 'flex', gap: isMobile ? 8 : 10, marginTop: 10, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
               <input
                 value={input}
                 onChange={e => setInput(e.target.value)}
@@ -1115,11 +1118,11 @@ export default function Page() {
                 }}
                 placeholder="Speak or type your next line…"
                 style={{
-                  flex: 1,
+                  flex: isMobile ? '1 1 100%' : 1,
                   background: '#0f172a',
                   color: '#e5ecff',
                   borderRadius: 10,
-                  padding: '10px 12px',
+                  padding: isMobile ? '10px 10px' : '10px 12px',
                   border: '1px solid #273754',
                   outline: 'none',
                 } as React.CSSProperties}
@@ -1129,13 +1132,14 @@ export default function Page() {
                 onClick={onSendClick}
                 disabled={ended}
                 style={{
-                  padding: '10px 14px',
+                  padding: isMobile ? '10px 12px' : '10px 14px',
                   borderRadius: 10,
                   background: ended ? '#64748b' : '#60a5fa',
                   border: '1px solid rgba(255,255,255,.15)',
                   color: '#0b1220',
                   fontWeight: 700,
                   cursor: ended ? 'not-allowed' : 'pointer',
+                  width: isMobile ? '100%' : 'auto',
                 }}
               >
                 Send
@@ -1143,13 +1147,14 @@ export default function Page() {
               <button
                 onClick={onEndAndScore}
                 style={{
-                  padding: '10px 14px',
+                  padding: isMobile ? '10px 12px' : '10px 14px',
                   borderRadius: 10,
                   background: '#22c55e',
                   border: '1px solid rgba(255,255,255,.15)',
                   color: '#0b1220',
                   fontWeight: 700,
                   cursor: 'pointer',
+                  width: isMobile ? '100%' : 'auto',
                 }}
               >
                 End & Score
@@ -1157,13 +1162,14 @@ export default function Page() {
               <button
                 onClick={onStartNew}
                 style={{
-                  padding: '10px 14px',
+                  padding: isMobile ? '10px 12px' : '10px 14px',
                   borderRadius: 10,
                   background: '#f59e0b',
                   border: '1px solid rgba(255,255,255,.15)',
                   color: '#0b1220',
                   fontWeight: 700,
                   cursor: 'pointer',
+                  width: isMobile ? '100%' : 'auto',
                 }}
               >
                 Start New
@@ -1197,7 +1203,11 @@ export default function Page() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 12 }}>
+                <div style={{
+                   display: 'grid',
+                   gridTemplateColumns: isMobile ? '1fr' : 'repeat(3,minmax(0,1fr))', 
+                   gap: isMobile ? 8 : 12
+                 }}>
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.7, marginBottom: 6 }}>What went well</div>
                     <div style={{ display: 'grid', gap: 6 }}>
@@ -1283,8 +1293,8 @@ export default function Page() {
 
               <div
                 style={{
-                  width: isMobile ? 220 : 280,
-                  height: isMobile ? 260 : 320,
+                  width: isMobile ? '100%' : 280,
+                  height: isMobile ? 300 : 320,
                   borderRadius: 18,
                   background: '#0b1220',
                   border: '1px solid #17223b',
