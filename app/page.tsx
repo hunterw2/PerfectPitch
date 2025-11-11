@@ -359,16 +359,16 @@ function closingNudge() {
 
 function useIsMobile(breakpoint = 480) {
   const [isMobile, setIsMobile] = React.useState(false);
-  React.useEffect(() => {
-    const check = () =>
-      setIsMobile(window.matchMedia(`(max-width:${breakpoint}px)`).matches);
-    check();
-    window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
-  }, [breakpoint]);
-  return isMobile;
-}
 
+React.useEffect(() => {
+  const check = () => {
+    const w = window.innerWidth || document.documentElement.clientWidth;
+    setIsMobile(w < breakpoint);
+  };
+  check();
+  window.addEventListener('resize', check);
+  return () => window.removeEventListener('resize', check);
+}, [breakpoint]);
 /* =========================
    Page
 ========================= */
