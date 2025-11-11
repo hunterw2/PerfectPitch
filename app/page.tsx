@@ -901,13 +901,13 @@ export default function Page() {
               onChange={e => setScenario(s => ({ ...s, vertical: e.target.value as Vertical }))}
               style={{
                width: '100%',
-               height: fieldH,
+               height: 34,
  	       background: '#0f172a',
 	       color: '#e5efff',
 	       borderRadius: 8,
-	       padding: '0 ${fieldPadX}px',
+	       padding: '0 8px',
      	       border: '1px solid #273754',
-               lineHeight: 1,
+               lineHeight: 1.2,
      	       appearance: 'none'
              }}
             >
@@ -925,16 +925,15 @@ export default function Page() {
               onChange={e => setScenario(s => ({ ...s, difficulty: e.target.value as Difficulty }))}
               style={{
                width: '100%',
-               height: fieldH,
+               height: 34,
  	       background: '#0f172a',
 	       color: '#e5efff',
 	       borderRadius: 8,
-	       padding: '0 ${fieldPadX}px',
+	       padding: '0 8px',
      	       border: '1px solid #273754',
-               lineHeight: 1,
+               lineHeight: 1.2,
      	       appearance: 'none'
              }}
-
             >
               <option>easy</option>
               <option>medium</option>
@@ -949,18 +948,17 @@ export default function Page() {
               onChange={e => setScenario(s => ({ ...s, tone: e.target.value }))}
               placeholder="matter-of-fact"
               style={{
+              style={{
                width: '100%',
-               height: fieldH,
+               height: 34,
  	       background: '#0f172a',
 	       color: '#e5efff',
 	       borderRadius: 8,
-	       padding: '0 ${fieldPadX}px',
+	       padding: '0 8px',
      	       border: '1px solid #273754',
-               lineHeight: 1,
+               lineHeight: 1.2,
      	       appearance: 'none'
-             }}
-
-            />
+             }}            />
           </div>
 
           <div>
@@ -970,14 +968,15 @@ export default function Page() {
               onChange={e => setScenario(s => ({ ...s, product: e.target.value }))}
               placeholder="pen"
               style={{
+              style={{
                width: '100%',
-               height: fieldH,
+               height: 34,
  	       background: '#0f172a',
 	       color: '#e5efff',
 	       borderRadius: 8,
-	       padding: '0 ${fieldPadX}px',
+	       padding: '0 8px',
      	       border: '1px solid #273754',
-               lineHeight: 1,
+               lineHeight: 1.2,
      	       appearance: 'none'
              }}
 
@@ -991,17 +990,17 @@ export default function Page() {
               onChange={e => setScenario(s => ({ ...s, persona: e.target.value }))}
               placeholder="Homeowner…"
               style={{
+              style={{
                width: '100%',
-               height: fieldH,
+               height: 34,
  	       background: '#0f172a',
 	       color: '#e5efff',
 	       borderRadius: 8,
-	       padding: '0 ${fieldPadX}px',
+	       padding: '0 8px',
      	       border: '1px solid #273754',
-               lineHeight: 1,
+               lineHeight: 1.2,
      	       appearance: 'none'
              }}
-
             />
           </div>
         </div>
