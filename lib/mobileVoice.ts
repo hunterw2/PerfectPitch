@@ -145,7 +145,7 @@ function clamp(v: number, lo: number, hi: number) {
 // ---------------- SPEAK (stable, tone-aware, non-overlapping) ----------------
 let speaking = false;
 
-export async function speakText(text: string, opts?: SpeakOpts) {
+export async function speakText(text: string, opts?: SpeakOptions) {
   try {
     stopSpeaking(); // stop anything already speaking
 
