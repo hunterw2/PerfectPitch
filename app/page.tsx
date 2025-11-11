@@ -370,6 +370,7 @@ function useIsMobile(breakpoint = 480) {
     return () => window.removeEventListener('resize', check);
   }, [breakpoint]);
 
+
   return isMobile;
 }
 /* =========================
@@ -417,7 +418,8 @@ export default function Page() {
 
   /* History & Leaderboard (right drawer) */
   const [showHL, setShowHL] = useState(false);
-  const [lbFilter, setLbFilter] = useState<Difficulty | 'all'>('all');
+  const fieldH = isMobile ? 40 : 44;
+   const fieldPadX = isMobile ? 10 : 12;  const [lbFilter, setLbFilter] = useState<Difficulty | 'all'>('all');
   const [lbRows, setLbRows] = useState<any[]>([]);
   const runs = loadRuns();
   const leaderboard = useMemo(
@@ -669,17 +671,8 @@ export default function Page() {
 
       setScore(res);
 
-      // initials (simple)
-      let initials = (localStorage.getItem('pp_initials') || '').toUpperCase().slice(0,3);
-      if (!initials) {
-        initials = (prompt('Enter your initials (3 letters) for the leaderboard:') || '')
-          .toUpperCase().replace(/[^A-Z]/g,'').slice(0,3);
-        if (initials) localStorage.setItem('pp_initials', initials);
-      }
-
       // cloud save
       saveScoreToCloud({
-        initials,
         score: res.score,
         vertical: scenario.vertical,
         difficulty: scenario.difficulty,
@@ -906,7 +899,17 @@ export default function Page() {
             <select
               value={scenario.vertical}
               onChange={e => setScenario(s => ({ ...s, vertical: e.target.value as Vertical }))}
-              style={{ width: '100%', background: '#0f172a', color: '#e5ecff', borderRadius: 8, padding: 8, border: '1px solid #273754' }}
+              style={{
+               width: '100%',
+               height: fieldH,
+ 	       background: '#0f172a',
+	       color: '#e5efff',
+	       borderRadius: 8,
+	       padding: '0 ${fieldPadX}px',
+     	       border: '1px solid #273754',
+               lineHeight: 1,
+     	       appearance: 'none'
+             }}
             >
               <option value="door2door">Door-to-Door</option>
               <option value="b2b">B2B</option>
@@ -920,7 +923,18 @@ export default function Page() {
             <select
               value={scenario.difficulty}
               onChange={e => setScenario(s => ({ ...s, difficulty: e.target.value as Difficulty }))}
-              style={{ width: '100%', background: '#0f172a', color: '#e5ecff', borderRadius: 8, padding: 8, border: '1px solid #273754' }}
+              style={{
+               width: '100%',
+               height: fieldH,
+ 	       background: '#0f172a',
+	       color: '#e5efff',
+	       borderRadius: 8,
+	       padding: '0 ${fieldPadX}px',
+     	       border: '1px solid #273754',
+               lineHeight: 1,
+     	       appearance: 'none'
+             }}
+
             >
               <option>easy</option>
               <option>medium</option>
@@ -934,7 +948,18 @@ export default function Page() {
               value={scenario.tone}
               onChange={e => setScenario(s => ({ ...s, tone: e.target.value }))}
               placeholder="matter-of-fact"
-              style={{ width: '100%', background: '#0f172a', color: '#e5ecff', borderRadius: 8, padding: 8, border: '1px solid #273754' }}
+              style={{
+               width: '100%',
+               height: fieldH,
+ 	       background: '#0f172a',
+	       color: '#e5efff',
+	       borderRadius: 8,
+	       padding: '0 ${fieldPadX}px',
+     	       border: '1px solid #273754',
+               lineHeight: 1,
+     	       appearance: 'none'
+             }}
+
             />
           </div>
 
@@ -944,7 +969,18 @@ export default function Page() {
               value={scenario.product}
               onChange={e => setScenario(s => ({ ...s, product: e.target.value }))}
               placeholder="pen"
-              style={{ width: '100%', background: '#0f172a', color: '#e5ecff', borderRadius: 8, padding: 8, border: '1px solid #273754' }}
+              style={{
+               width: '100%',
+               height: fieldH,
+ 	       background: '#0f172a',
+	       color: '#e5efff',
+	       borderRadius: 8,
+	       padding: '0 ${fieldPadX}px',
+     	       border: '1px solid #273754',
+               lineHeight: 1,
+     	       appearance: 'none'
+             }}
+
             />
           </div>
 
@@ -954,7 +990,18 @@ export default function Page() {
               value={scenario.persona}
               onChange={e => setScenario(s => ({ ...s, persona: e.target.value }))}
               placeholder="Homeowner…"
-              style={{ width: '100%', background: '#0f172a', color: '#e5ecff', borderRadius: 8, padding: 8, border: '1px solid #273754' }}
+              style={{
+               width: '100%',
+               height: fieldH,
+ 	       background: '#0f172a',
+	       color: '#e5efff',
+	       borderRadius: 8,
+	       padding: '0 ${fieldPadX}px',
+     	       border: '1px solid #273754',
+               lineHeight: 1,
+     	       appearance: 'none'
+             }}
+
             />
           </div>
         </div>
